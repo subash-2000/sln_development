@@ -1,0 +1,17 @@
+{
+  "name": "warehouse-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Unified runner for SLN Warehouse Management System (Frontend + Backend)",
+  "scripts": {
+    "dev": "concurrently -n \"frontend,backend\" -c \"cyan,green\" \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "cd warehouse_frontend && npm run dev",
+    "dev:backend": "cd warehouse && venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --port 8000",
+    "dev:backend:global": "cd warehouse && python -m uvicorn app.main:app --reload --port 8000",
+    "build:frontend": "cd warehouse_frontend && npm run build",
+    "test:frontend": "cd warehouse_frontend && npm test -- --run"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
