@@ -19,7 +19,7 @@ class ProductRepository:
         return list(res.scalars().all())
 
     async def list_uoms(self) -> list[UOM]:
-        stmt = select(UOM).options(selectinload(UOM.category)).order_by(UOM.code.asc())
+        stmt = select(UOM).options(selectinload(UOM.category)).order_by(UOM.name.asc(), UOM.code.asc())
         res = await self.db.execute(stmt)
         return list(res.scalars().all())
 
@@ -56,7 +56,7 @@ class ProductRepository:
             stmt = stmt.where(
                 or_(ProductCategory.company_id == company_id, ProductCategory.company_id.is_(None))
             )
-        stmt = stmt.order_by(ProductCategory.code.asc())
+        stmt = stmt.order_by(ProductCategory.name.asc(), ProductCategory.code.asc())
         res = await self.db.execute(stmt)
         return list(res.scalars().all())
 
@@ -73,6 +73,20 @@ class ProductRepository:
     async def update_category(self, cat: ProductCategory) -> ProductCategory:
         await self.db.flush()
         return cat
+
+    async def delete_category(self, cat: ProductCategory) -> None:
+        await self.db.delete(cat)
+        await self.db.flush()
+
+    async def count_category_products(self, category_id: uuid.UUID) -> int:
+        stmt = select(func.count(Product.id)).where(Product.category_id == category_id)
+        res = await self.db.execute(stmt)
+        return res.scalar() or 0
+
+    async def count_category_children(self, category_id: uuid.UUID) -> int:
+        stmt = select(func.count(ProductCategory.id)).where(ProductCategory.parent_id == category_id)
+        res = await self.db.execute(stmt)
+        return res.scalar() or 0
 
     # Product Item Queries
     async def list_products(

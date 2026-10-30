@@ -25,12 +25,21 @@ const SearchableSelect = ({
   const labelOf = (option) => (getOptionLabel ? getOptionLabel(option) : option?.label || option?.name || '');
   const valueOf = (option) => (getOptionValue ? getOptionValue(option) : option?.id);
 
-  const selected = options.find((option) => String(valueOf(option)) === String(value));
+  const sortedOptions = useMemo(() => {
+    if (!Array.isArray(options)) return [];
+    return [...options].sort((a, b) => {
+      const la = String(labelOf(a) ?? '').trim();
+      const lb = String(labelOf(b) ?? '').trim();
+      return la.localeCompare(lb, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }, [options, getOptionLabel]);
+
+  const selected = sortedOptions.find((option) => String(valueOf(option)) === String(value));
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((option) => labelOf(option).toLowerCase().includes(q));
-  }, [options, query, getOptionLabel]);
+    if (!q) return sortedOptions;
+    return sortedOptions.filter((option) => labelOf(option).toLowerCase().includes(q));
+  }, [sortedOptions, query, getOptionLabel]);
 
   const placeMenu = () => {
     const el = triggerRef.current;

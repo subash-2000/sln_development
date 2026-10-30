@@ -11,6 +11,7 @@ from app.core.exceptions import AppException
 from app.core.logging import logger, setup_logging
 from app.core.middleware import RequestIDMiddleware, TimingAndLoggingMiddleware
 from app.core.response import error_response, success_response
+import app.core.audit  # noqa: F401 - Register SQLAlchemy before_flush audit hook
 from app.modules.audit.router import router as audit_router
 from app.modules.billing import billing_router
 from app.modules.branches.router import router as branches_router

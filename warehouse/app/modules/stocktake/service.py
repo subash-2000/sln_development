@@ -22,7 +22,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import (
     AuditAction,
     CountVarianceAction,
@@ -774,4 +774,10 @@ class StockTakeService:
         company_id: uuid.UUID,
     ) -> StockTakeOrderResponse:
         order = await self._get_or_raise(take_id, company_id)
-        return StockTakeOrderResponse.model_validate(order)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, order.created_by_id, order.updated_by_id
+        )
+        resp = StockTakeOrderResponse.model_validate(order)
+        resp.created_by = created_by_name
+        resp.updated_by = updated_by_name
+        return resp

@@ -73,6 +73,10 @@ class ReturnOrderResponse(BaseModel):
     lines: list[ReturnOrderLineResponse] = []
     created_at: datetime
     updated_at: datetime
+    created_by_id: UUID | None = None
+    updated_by_id: UUID | None = None
+    created_by: str | None = None
+    updated_by: str | None = None
 
 
 class ReturnInspectionLineInput(BaseModel):

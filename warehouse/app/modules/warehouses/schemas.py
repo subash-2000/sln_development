@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.core.constants import EntityStatus, WarehouseType
 
@@ -22,6 +22,7 @@ class WarehouseCreateRequest(BaseModel):
     contact_person: str | None = Field(None, max_length=255)
     phone: str | None = Field(None, max_length=50)
     email: str | None = Field(None, max_length=255)
+    address: str | None = Field(None, max_length=255, description="Alias for address_line1")
     address_line1: str | None = Field(None, max_length=255)
     address_line2: str | None = Field(None, max_length=255)
     city: str | None = Field(None, max_length=100)
@@ -32,6 +33,14 @@ class WarehouseCreateRequest(BaseModel):
     total_capacity_mt: Decimal | None = Field(None, ge=0)
     status: EntityStatus = Field(EntityStatus.ACTIVE)
 
+    @model_validator(mode="before")
+    @classmethod
+    def populate_address_line1(cls, data: dict) -> dict:
+        if isinstance(data, dict):
+            if not data.get("address_line1") and data.get("address"):
+                data["address_line1"] = data["address"]
+        return data
+
 
 class WarehouseUpdateRequest(BaseModel):
     branch_id: uuid.UUID | None = None
@@ -40,6 +49,7 @@ class WarehouseUpdateRequest(BaseModel):
     contact_person: str | None = Field(None, max_length=255)
     phone: str | None = Field(None, max_length=50)
     email: str | None = Field(None, max_length=255)
+    address: str | None = Field(None, max_length=255, description="Alias for address_line1")
     address_line1: str | None = Field(None, max_length=255)
     address_line2: str | None = Field(None, max_length=255)
     city: str | None = Field(None, max_length=100)
@@ -49,6 +59,14 @@ class WarehouseUpdateRequest(BaseModel):
     total_area_sqft: Decimal | None = Field(None, ge=0)
     total_capacity_mt: Decimal | None = Field(None, ge=0)
     status: EntityStatus | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_address_line1(cls, data: dict) -> dict:
+        if isinstance(data, dict):
+            if not data.get("address_line1") and data.get("address"):
+                data["address_line1"] = data["address"]
+        return data
 
 
 class WarehouseResponse(BaseModel):
@@ -73,5 +91,9 @@ class WarehouseResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    created_by_id: uuid.UUID | None = None
+    updated_by_id: uuid.UUID | None = None
+    created_by: str | None = None
+    updated_by: str | None = None
 
     model_config = {"from_attributes": True}

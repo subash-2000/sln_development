@@ -48,8 +48,19 @@ const UserForm = ({ initialData, onSubmit, isLoading, isEdit = false }) => {
     { id: 'cmp_2', name: 'Company Beta' },
   ];
 
-  const roles = fetchedRoles.length > 0 ? fetchedRoles : defaultRoles;
-  const companies = fetchedCompanies.length > 0 ? fetchedCompanies : defaultCompanies;
+  const roles = React.useMemo(() => {
+    const list = fetchedRoles.length > 0 ? fetchedRoles : defaultRoles;
+    return list.slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [fetchedRoles]);
+
+  const companies = React.useMemo(() => {
+    const list = fetchedCompanies.length > 0 ? fetchedCompanies : defaultCompanies;
+    return list.slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [fetchedCompanies]);
 
   const {
     register,

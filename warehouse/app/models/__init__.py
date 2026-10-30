@@ -26,7 +26,7 @@ from app.models.jobwork import (
     JobWorkReceiptLine,
 )
 from app.models.logistics import DispatchOrder, DispatchOrderLine, GatePass
-from app.models.transport import Transporter
+from app.models.transport import Transporter, TransporterVehicle
 from app.models.product import UOM, Product, ProductCategory, Tax, UomCategory
 from app.models.rbac import Permission, Role, RolePermission, UserCompanyBranch, UserRole
 from app.models.returns import ReturnOrder, ReturnOrderLine
@@ -78,6 +78,7 @@ __all__ = [
     "DispatchOrderLine",
     "GatePass",
     "Transporter",
+    "TransporterVehicle",
     "BillingPeriod",
     "BillingDocument",
     "BillingLine",

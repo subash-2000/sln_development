@@ -41,6 +41,43 @@ const LogisticsOutwardForm = ({ onSubmit, isLoading }) => {
     warehouseId ? { warehouse_id: warehouseId, page_size: 200 } : { page_size: 0 }
   );
 
+  const warehouses = useMemo(() => {
+    return (warehousesData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [warehousesData]);
+
+  const customers = useMemo(() => {
+    return (customersData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [customersData]);
+
+  const vendors = useMemo(() => {
+    return (vendorsData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [vendorsData]);
+
+  const products = useMemo(() => {
+    return (productsData?.items || []).slice().sort((a, b) =>
+      (a.name || a.sku || '').localeCompare(b.name || b.sku || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [productsData]);
+
+  const uoms = useMemo(() => {
+    const list = Array.isArray(uomsData) ? uomsData : (uomsData?.items || []);
+    return list.slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [uomsData]);
+
+  const locations = useMemo(() => {
+    return (locationsData?.items || []).slice().sort((a, b) =>
+      (a.code || a.name || '').localeCompare(b.code || b.name || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [locationsData]);
+
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
 
   const submit = (values) => {
@@ -83,7 +120,7 @@ const LogisticsOutwardForm = ({ onSubmit, isLoading }) => {
             <label className="text-sm font-medium text-gray-700">Warehouse</label>
             <select {...register('warehouse_id')} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
               <option value="">Select warehouse</option>
-              {warehousesData?.items?.map((wh) => (
+              {warehouses.map((wh) => (
                 <option key={wh.id} value={wh.id}>{wh.name}</option>
               ))}
             </select>
@@ -94,7 +131,7 @@ const LogisticsOutwardForm = ({ onSubmit, isLoading }) => {
             <label className="text-sm font-medium text-gray-700">Customer</label>
             <select {...register('customer_id')} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
               <option value="">Optional</option>
-              {customersData?.items?.map((c) => (
+              {customers.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
@@ -103,7 +140,7 @@ const LogisticsOutwardForm = ({ onSubmit, isLoading }) => {
             <label className="text-sm font-medium text-gray-700">Supplier</label>
             <select {...register('vendor_id')} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
               <option value="">Optional</option>
-              {vendorsData?.items?.map((v) => (
+              {vendors.map((v) => (
                 <option key={v.id} value={v.id}>{v.name}</option>
               ))}
             </select>
@@ -136,7 +173,7 @@ const LogisticsOutwardForm = ({ onSubmit, isLoading }) => {
               <div className="md:col-span-3">
                 <select {...register(`lines.${index}.product_id`)} className="w-full border rounded-lg px-3 py-2 text-sm">
                   <option value="">Product</option>
-                  {productsData?.items?.map((p) => (
+                  {products.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
@@ -144,7 +181,7 @@ const LogisticsOutwardForm = ({ onSubmit, isLoading }) => {
               <div className="md:col-span-2">
                 <select {...register(`lines.${index}.uom_id`)} className="w-full border rounded-lg px-3 py-2 text-sm">
                   <option value="">UOM</option>
-                  {uomsData?.map((u) => (
+                  {uoms.map((u) => (
                     <option key={u.id} value={u.id}>{u.code}</option>
                   ))}
                 </select>
@@ -152,7 +189,7 @@ const LogisticsOutwardForm = ({ onSubmit, isLoading }) => {
               <div className="md:col-span-3">
                 <select {...register(`lines.${index}.location_id`)} className="w-full border rounded-lg px-3 py-2 text-sm" disabled={!warehouseId}>
                   <option value="">Location</option>
-                  {locationsData?.items?.map((loc) => (
+                  {locations.map((loc) => (
                     <option key={loc.id} value={loc.id}>{loc.code} — {loc.name}</option>
                   ))}
                 </select>

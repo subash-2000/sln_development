@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import AuditAction, EntityStatus
 from app.core.exceptions import ConflictException, NotFoundException
 from app.models.warehouse import Location, Warehouse
@@ -53,7 +53,13 @@ class LocationService:
         location = await self.repo.get_by_id(location_id, company_id=company_id)
         if not location:
             raise NotFoundException(f"Location with ID {location_id} not found")
-        return LocationResponse.model_validate(location)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, location.created_by_id, location.updated_by_id
+        )
+        resp = LocationResponse.model_validate(location)
+        resp.created_by = created_by_name
+        resp.updated_by = updated_by_name
+        return resp
 
     async def get_location_by_barcode(
         self, barcode: str, company_id: uuid.UUID
@@ -62,7 +68,13 @@ class LocationService:
         location = await self.repo.get_by_barcode(company_id, clean_barcode)
         if not location:
             raise NotFoundException(f"Location with barcode '{clean_barcode}' not found")
-        return LocationResponse.model_validate(location)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, location.created_by_id, location.updated_by_id
+        )
+        resp = LocationResponse.model_validate(location)
+        resp.created_by = created_by_name
+        resp.updated_by = updated_by_name
+        return resp
 
     async def get_warehouse_tree(
         self, warehouse_id: uuid.UUID, company_id: uuid.UUID

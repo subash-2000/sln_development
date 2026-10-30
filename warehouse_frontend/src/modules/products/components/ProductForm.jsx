@@ -19,12 +19,28 @@ const fieldGridClass = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3';
 
 const ProductForm = ({ initialData, onSubmit, isLoading, isEdit = false }) => {
   const { companyContext } = useAuthStore();
-  const { data: companiesData } = useCompanies({ page_size: 50 });
-  const companies = companiesData?.items || [];
-  const { data: categoriesData } = useCategories();
-  const { data: uomsData } = useUOMs();
-  const { data: vendorsData } = useVendors({ page_size: 200, status: 'ACTIVE' });
-  const vendors = vendorsData?.items || [];
+  const companies = useMemo(() => {
+    return (companiesData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [companiesData]);
+  const categories = useMemo(() => {
+    const items = categoriesData?.items || (Array.isArray(categoriesData) ? categoriesData : []);
+    return items.slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [categoriesData]);
+  const uoms = useMemo(() => {
+    const items = Array.isArray(uomsData) ? uomsData : (uomsData?.items || []);
+    return items.slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [uomsData]);
+  const vendors = useMemo(() => {
+    return (vendorsData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [vendorsData]);
 
   const defaultValues = useMemo(() => {
     if (!initialData) {
@@ -167,7 +183,7 @@ const ProductForm = ({ initialData, onSubmit, isLoading, isEdit = false }) => {
                 className={compactSelectClass}
               >
                 <option value="">Select Category (Optional)</option>
-                {categoriesData?.items?.map(cat => (
+                {categories.map(cat => (
                   <option key={cat.id} value={cat.id}>{cat.name}</option>
                 ))}
               </select>
@@ -182,7 +198,7 @@ const ProductForm = ({ initialData, onSubmit, isLoading, isEdit = false }) => {
                 className={compactSelectClass}
               >
                 <option value="">Select UOM</option>
-                {uomsData?.map(uom => (
+                {uoms.map(uom => (
                   <option key={uom.id} value={uom.id}>{uom.name} ({uom.code})</option>
                 ))}
               </select>

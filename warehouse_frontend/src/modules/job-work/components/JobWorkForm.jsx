@@ -16,6 +16,31 @@ const JobWorkForm = ({ onSubmit, isLoading, defaultValues }) => {
   const { data: productsData } = useProducts({ page_size: 200 });
   const { data: uomsData } = useUOMs();
 
+  const vendors = React.useMemo(() => {
+    return (vendorsData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [vendorsData]);
+
+  const warehouses = React.useMemo(() => {
+    return (warehousesData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [warehousesData]);
+
+  const products = React.useMemo(() => {
+    return (productsData?.items || []).slice().sort((a, b) =>
+      (a.name || a.sku || '').localeCompare(b.name || b.sku || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [productsData]);
+
+  const uoms = React.useMemo(() => {
+    const list = Array.isArray(uomsData) ? uomsData : (uomsData?.items || []);
+    return list.slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [uomsData]);
+
   const {
     register,
     control,
@@ -67,7 +92,7 @@ const JobWorkForm = ({ onSubmit, isLoading, defaultValues }) => {
               className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
             >
               <option value="">Select supplier</option>
-              {vendorsData?.items?.map((v) => (
+              {vendors.map((v) => (
                 <option key={v.id} value={v.id}>{v.name}</option>
               ))}
             </select>
@@ -81,7 +106,7 @@ const JobWorkForm = ({ onSubmit, isLoading, defaultValues }) => {
               className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
             >
               <option value="">Select warehouse</option>
-              {warehousesData?.items?.map((wh) => (
+              {warehouses.map((wh) => (
                 <option key={wh.id} value={wh.id}>{wh.name}</option>
               ))}
             </select>
@@ -134,7 +159,7 @@ const JobWorkForm = ({ onSubmit, isLoading, defaultValues }) => {
                   className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none"
                 >
                   <option value="">Select product</option>
-                  {productsData?.items?.map((p) => (
+                  {products.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
@@ -146,7 +171,7 @@ const JobWorkForm = ({ onSubmit, isLoading, defaultValues }) => {
                   className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none"
                 >
                   <option value="">UOM</option>
-                  {uomsData?.map((u) => (
+                  {uoms.map((u) => (
                     <option key={u.id} value={u.id}>{u.code}</option>
                   ))}
                 </select>

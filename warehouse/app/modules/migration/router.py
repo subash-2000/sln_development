@@ -161,8 +161,20 @@ async def get_import_batch_detail(
     if not batch:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Batch not found")
-        
+
+    from app.core.audit import get_audit_names
+    created_by_name, updated_by_name = await get_audit_names(
+        db, batch.created_by_id, batch.updated_by_id
+    )
+    resp = ImportBatchDetailResponse.model_validate(batch)
+    resp.created_by = created_by_name
+    resp.updated_by = updated_by_name
+    resp.created_at = batch.created_at
+    resp.updated_at = batch.updated_at
+    resp.created_by_id = batch.created_by_id
+    resp.updated_by_id = batch.updated_by_id
+
     return success_response(
-        data=ImportBatchDetailResponse.from_orm(batch),
+        data=resp,
         message="Batch details retrieved successfully"
     )

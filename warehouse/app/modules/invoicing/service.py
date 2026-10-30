@@ -5,7 +5,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import (
     AuditAction,
     BillingDocumentStatus,
@@ -442,7 +442,12 @@ class InvoicingService:
         invoice = await self.repo.get_invoice_by_id(invoice_id, company_id)
         if not invoice:
             raise NotFoundException(f"Invoice with ID {invoice_id} not found")
-        return self._build_invoice_response(invoice)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, invoice.created_by_id, invoice.updated_by_id
+        )
+        return self._build_invoice_response(
+            invoice, created_by=created_by_name, updated_by=updated_by_name
+        )
 
     async def list_invoices(
         self,
@@ -512,7 +517,12 @@ class InvoicingService:
 
         return False
 
-    def _build_invoice_response(self, invoice: Invoice) -> InvoiceResponse:
+    def _build_invoice_response(
+        self,
+        invoice: Invoice,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> InvoiceResponse:
         lines_resp = [
             InvoiceLineResponse(
                 id=line.id,
@@ -577,4 +587,8 @@ class InvoicingService:
             payments=payments_resp,
             created_at=invoice.created_at,
             updated_at=invoice.updated_at,
+            created_by_id=invoice.created_by_id,
+            updated_by_id=invoice.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
         )

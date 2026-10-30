@@ -18,10 +18,6 @@ const defaultValues = {
   city: '',
   state: '',
   pincode: '',
-  vehicle_number: '',
-  vehicle_type: '',
-  driver_name: '',
-  driver_phone: '',
 };
 
 const TransporterForm = ({ initialData, onSubmit, isLoading, isEdit = false }) => {
@@ -49,10 +45,6 @@ const TransporterForm = ({ initialData, onSubmit, isLoading, isEdit = false }) =
         city: initialData.city || '',
         state: initialData.state || '',
         pincode: initialData.pincode || '',
-        vehicle_number: initialData.vehicle_number || '',
-        vehicle_type: initialData.vehicle_type || '',
-        driver_name: initialData.driver_name || '',
-        driver_phone: initialData.driver_phone || '',
         status: initialData.status || 'ACTIVE',
       });
     }
@@ -88,7 +80,20 @@ const TransporterForm = ({ initialData, onSubmit, isLoading, isEdit = false }) =
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input label="Contact Person" {...register('contact_person')} />
-            <Input label="Phone" {...register('phone')} error={errors.phone?.message} />
+            <Input
+              type="tel"
+              label="Phone"
+              placeholder="e.g. +91 98765 43210"
+              {...register('phone', {
+                onChange: (e) => {
+                  const filtered = e.target.value.replace(/[^0-9+\s-]/g, '');
+                  if (filtered !== e.target.value) {
+                    e.target.value = filtered;
+                  }
+                },
+              })}
+              error={errors.phone?.message}
+            />
           </div>
           <Input label="Email" type="email" {...register('email')} error={errors.email?.message} />
           <Input label="Address" {...register('address')} />
@@ -109,25 +114,6 @@ const TransporterForm = ({ initialData, onSubmit, isLoading, isEdit = false }) =
               </select>
             </div>
           )}
-        </Card.Body>
-      </Card>
-
-      <Card>
-        <Card.Header>
-          <h2 className="text-base font-semibold text-gray-900">Vehicle details (optional)</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Default vehicle and driver for this transporter — not a separate master list.
-          </p>
-        </Card.Header>
-        <Card.Body className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input
-            label="Vehicle Number"
-            placeholder="KA-01-AB-1234"
-            {...register('vehicle_number')}
-          />
-          <Input label="Vehicle Type" placeholder="Truck / Tempo" {...register('vehicle_type')} />
-          <Input label="Driver Name" {...register('driver_name')} />
-          <Input label="Driver Phone" {...register('driver_phone')} />
         </Card.Body>
       </Card>
 

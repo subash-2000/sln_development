@@ -5,7 +5,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import (
     AuditAction,
     CarrierType,
@@ -60,7 +60,12 @@ class LogisticsService:
         self.repo = LogisticsRepository(db)
         self.inv_repo = InventoryRepository(db)
 
-    def _serialize_dispatch_order(self, order: DispatchOrder) -> DispatchOrderResponse:
+    def _serialize_dispatch_order(
+        self,
+        order: DispatchOrder,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> DispatchOrderResponse:
         lines = [
             DispatchOrderLineResponse(
                 id=line.id,
@@ -103,9 +108,18 @@ class LogisticsService:
             lines=lines,
             created_at=order.created_at,
             updated_at=order.updated_at,
+            created_by_id=order.created_by_id,
+            updated_by_id=order.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
         )
 
-    def _serialize_gate_pass(self, gp: GatePass) -> GatePassResponse:
+    def _serialize_gate_pass(
+        self,
+        gp: GatePass,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> GatePassResponse:
         return GatePassResponse(
             id=gp.id,
             company_id=gp.company_id,
@@ -125,6 +139,10 @@ class LogisticsService:
             remarks=gp.remarks,
             created_at=gp.created_at,
             updated_at=gp.updated_at,
+            created_by_id=gp.created_by_id,
+            updated_by_id=gp.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
         )
 
     async def create_dispatch_order(
@@ -267,7 +285,12 @@ class LogisticsService:
         order = await self.repo.get_dispatch_order_by_id(order_id, company_id)
         if not order:
             raise NotFoundException(f"Dispatch order {order_id} not found")
-        return self._serialize_dispatch_order(order)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, order.created_by_id, order.updated_by_id
+        )
+        return self._serialize_dispatch_order(
+            order, created_by=created_by_name, updated_by=updated_by_name
+        )
 
     async def list_dispatch_orders(
         self,
@@ -560,7 +583,12 @@ class LogisticsService:
         gp = await self.repo.get_gate_pass_by_id(gate_pass_id, company_id)
         if not gp:
             raise NotFoundException(f"Gate pass {gate_pass_id} not found")
-        return self._serialize_gate_pass(gp)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, gp.created_by_id, gp.updated_by_id
+        )
+        return self._serialize_gate_pass(
+            gp, created_by=created_by_name, updated_by=updated_by_name
+        )
 
     async def list_gate_passes(
         self,

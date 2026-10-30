@@ -16,6 +16,16 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"
 
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def parse_debug(cls, v):
+        if isinstance(v, str):
+            if v.lower() in ("release", "false", "0", "prod", "production", "no"):
+                return False
+            if v.lower() in ("debug", "true", "1", "dev", "development", "yes"):
+                return True
+        return bool(v)
+
     HOST: str = "0.0.0.0"
     PORT: int = 8000
 

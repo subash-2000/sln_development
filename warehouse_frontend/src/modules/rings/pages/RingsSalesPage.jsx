@@ -26,7 +26,6 @@ const RingsSalesPage = () => {
     [vendorId, workflow]
   );
   const { data, isLoading, error, refetch } = useRingsSales(filters);
-  const { data: buyerSource } = useRingsSales(buyerQuery);
   const { data: vendorsData } = useVendors({ page_size: 200 });
   const rows = Array.isArray(data) ? data : [];
   const buyers = useMemo(() => {
@@ -40,6 +39,11 @@ const RingsSalesPage = () => {
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [buyerSource]);
+  const vendors = useMemo(() => {
+    return (vendorsData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [vendorsData]);
   const selectClass =
     'bg-white border border-gray-200 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none';
 
@@ -97,7 +101,7 @@ const RingsSalesPage = () => {
           <div className="flex flex-wrap gap-3">
             <select className={selectClass} value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
               <option value="">All suppliers</option>
-              {(vendorsData?.items || []).map((v) => (
+              {vendors.map((v) => (
                 <option key={v.id} value={v.id}>{v.name}</option>
               ))}
             </select>

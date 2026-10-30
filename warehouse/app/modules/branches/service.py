@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import EntityStatus
 from app.core.exceptions import ConflictException, NotFoundException
 from app.models.branch import Branch
@@ -40,7 +40,10 @@ class BranchService:
             raise NotFoundException(
                 f"Branch with ID '{branch_id}' not found", error_code="BRANCH_NOT_FOUND"
             )
-        return self._to_response(branch)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, branch.created_by_id, branch.updated_by_id
+        )
+        return self._to_response(branch, created_by=created_by_name, updated_by=updated_by_name)
 
     async def create_branch(self, req: BranchCreateRequest) -> BranchResponse:
         # 1. Verify company exists
@@ -181,7 +184,12 @@ class BranchService:
         full_branch = await self.repo.get_by_id(branch_id)
         return self._to_response(full_branch)
 
-    def _to_response(self, branch: Branch) -> BranchResponse:
+    def _to_response(
+        self,
+        branch: Branch,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> BranchResponse:
         return BranchResponse(
             id=branch.id,
             company_id=branch.company_id,
@@ -196,4 +204,9 @@ class BranchService:
             status=branch.status,
             is_active=branch.is_active,
             created_at=branch.created_at,
+            updated_at=branch.updated_at,
+            created_by_id=branch.created_by_id,
+            updated_by_id=branch.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
         )

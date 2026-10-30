@@ -9,6 +9,8 @@ class AuditLogResponse(BaseModel):
     id: uuid.UUID
     timestamp: datetime
     user_id: uuid.UUID | None = None
+    user_name: str | None = None
+    user_email: str | None = None
     company_id: uuid.UUID | None = None
     branch_id: uuid.UUID | None = None
     module: str

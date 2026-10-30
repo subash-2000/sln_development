@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_permission
+from app.core.exceptions import NotFoundException
 from app.core.pagination import PaginationParams, build_pagination_metadata
 from app.core.response import StandardResponse, success_response
 from app.models.user import User
@@ -49,24 +50,60 @@ async def list_audit_logs(
     )
     meta = build_pagination_metadata(total, pagination)
     return success_response(
-        data=[
-            AuditLogResponse(
-                id=log.id,
-                timestamp=log.timestamp,
-                user_id=log.user_id,
-                company_id=log.company_id,
-                branch_id=log.branch_id,
-                module=log.module,
-                entity_name=log.entity_name,
-                entity_id=log.entity_id,
-                action=log.action,
-                old_values=log.old_values,
-                new_values=log.new_values,
-                ip_address=log.ip_address,
-                request_id=log.request_id,
-            ).model_dump()
-            for log in logs
-        ],
+        data=[AuditLogResponse(**log).model_dump() for log in logs],
         message="Audit logs retrieved successfully",
         pagination=meta,
+    )
+
+
+@router.get(
+    "/entity/{entity_name}/{entity_id}",
+    response_model=StandardResponse[list[AuditLogResponse]],
+    status_code=status.HTTP_200_OK,
+    summary="Get Audit History for Entity",
+    description="Returns chronological audit entries and field mutations for a specific record.",
+)
+async def get_entity_audit_trail(
+    entity_name: str,
+    entity_id: str,
+    module: str | None = Query(None, description="Filter by module"),
+    limit: int = Query(50, ge=1, le=200),
+    current_user: User = Depends(require_permission("system.audit.read")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    repo = AuditLogRepository(db)
+    logs = await repo.get_entity_history(
+        entity_name=entity_name,
+        entity_id=entity_id,
+        module=module,
+        limit=limit,
+    )
+    return success_response(
+        data=[AuditLogResponse(**log).model_dump() for log in logs],
+        message=f"Audit history for {entity_name} retrieved successfully",
+    )
+
+
+@router.get(
+    "/{log_id}",
+    response_model=StandardResponse[AuditLogResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Get Audit Log Detail",
+    description="Returns detailed single audit event including old and new value snapshots.",
+)
+async def get_audit_log(
+    log_id: uuid.UUID,
+    current_user: User = Depends(require_permission("system.audit.read")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    repo = AuditLogRepository(db)
+    log = await repo.get_by_id(log_id)
+    if not log:
+        raise NotFoundException(
+            f"Audit log entry with ID '{log_id}' not found",
+            error_code="AUDIT_LOG_NOT_FOUND",
+        )
+    return success_response(
+        data=AuditLogResponse(**log).model_dump(),
+        message="Audit log retrieved successfully",
     )

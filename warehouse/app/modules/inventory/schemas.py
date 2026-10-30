@@ -175,6 +175,12 @@ class StockTransactionResponse(BaseModel):
     total_packages: int | None = None
     confirmed_at: datetime | None = None
     created_at: datetime
+    updated_at: datetime | None = None
+    created_by_id: uuid.UUID | None = None
+    updated_by_id: uuid.UUID | None = None
+    created_by: str | None = None
+    updated_by: str | None = None
+    created_by_name: str | None = None
     moves: list[StockMoveResponse] = []
 
 

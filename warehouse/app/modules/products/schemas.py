@@ -22,6 +22,12 @@ class UomResponse(BaseModel):
     factor: Decimal
     rounding_precision: Decimal
     status: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by_id: uuid.UUID | None = None
+    updated_by_id: uuid.UUID | None = None
+    created_by: str | None = None
+    updated_by: str | None = None
 
 
 class UomCreateRequest(BaseModel):
@@ -77,6 +83,12 @@ class ProductCategoryResponse(BaseModel):
     parent_id: uuid.UUID | None = None
     description: str | None = None
     status: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by_id: uuid.UUID | None = None
+    updated_by_id: uuid.UUID | None = None
+    created_by: str | None = None
+    updated_by: str | None = None
 
 
 # Product Master Schemas
@@ -246,4 +258,9 @@ class ProductResponse(BaseModel):
     status: str
     vendor_ids: list[uuid.UUID] = Field(default_factory=list)
     vendor_names: list[str] = Field(default_factory=list)
-    created_at: datetime
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by_id: uuid.UUID | None = None
+    updated_by_id: uuid.UUID | None = None
+    created_by: str | None = None
+    updated_by: str | None = None

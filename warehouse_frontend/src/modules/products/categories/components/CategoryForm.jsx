@@ -13,12 +13,19 @@ import { useNavigate } from 'react-router-dom';
 const CategoryForm = ({ initialData, onSubmit, isLoading = false, isEdit = false }) => {
   const navigate = useNavigate();
   const { companyContext } = useAuthStore();
-  const { data: companiesData } = useCompanies({ page_size: 50 });
-  const companies = companiesData?.items || [];
+  const { data: companiesData } = useCompanies({ pageSize: 100 });
+  const companies = useMemo(() => {
+    return (companiesData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [companiesData]);
 
   const { data: categoriesData } = useCategories({ page_size: 200 });
   const existingCategories = useMemo(() => {
-    return categoriesData?.items || (Array.isArray(categoriesData) ? categoriesData : []);
+    const list = categoriesData?.items || (Array.isArray(categoriesData) ? categoriesData : []);
+    return list.slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
   }, [categoriesData]);
 
   const currentCategoryId = initialData?.id || null;
@@ -209,7 +216,7 @@ const CategoryForm = ({ initialData, onSubmit, isLoading = false, isEdit = false
           <Button
             type="button"
             variant="outline"
-            onClick={() => navigate('/masters/products/categories')}
+            onClick={() => navigate('/products/categories')}
             disabled={isLoading}
           >
             Cancel

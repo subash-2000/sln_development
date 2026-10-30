@@ -109,6 +109,10 @@ class LocationResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    created_by_id: uuid.UUID | None = None
+    updated_by_id: uuid.UUID | None = None
+    created_by: str | None = None
+    updated_by: str | None = None
 
     model_config = {"from_attributes": True}
 

@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import (
     AgreementBillingCycle,
     AuditAction,
@@ -90,7 +90,13 @@ class BillingService:
         period = await self.repo.get_billing_period_by_id(period_id, company_id)
         if not period:
             raise NotFoundException(f"Billing period with ID {period_id} not found")
-        return BillingPeriodResponse.model_validate(period)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, period.created_by_id, period.updated_by_id
+        )
+        resp = BillingPeriodResponse.model_validate(period)
+        resp.created_by = created_by_name
+        resp.updated_by = updated_by_name
+        return resp
 
     async def list_billing_periods(
         self, company_id: uuid.UUID, params: PaginationParams
@@ -362,7 +368,12 @@ class BillingService:
         doc = await self.repo.get_billing_document_by_id(doc_id, company_id)
         if not doc:
             raise NotFoundException(f"Billing document with ID {doc_id} not found")
-        return self._build_document_response(doc)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, doc.created_by_id, doc.updated_by_id
+        )
+        return self._build_document_response(
+            doc, created_by=created_by_name, updated_by=updated_by_name
+        )
 
     async def list_billing_documents(
         self,
@@ -385,7 +396,12 @@ class BillingService:
         )
         return [self._build_document_response(d) for d in docs], total
 
-    def _build_document_response(self, doc: BillingDocument) -> BillingDocumentResponse:
+    def _build_document_response(
+        self,
+        doc: BillingDocument,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> BillingDocumentResponse:
         lines_resp = [
             BillingLineResponse(
                 id=line.id,
@@ -428,4 +444,8 @@ class BillingService:
             lines=lines_resp,
             created_at=doc.created_at,
             updated_at=doc.updated_at,
+            created_by_id=doc.created_by_id,
+            updated_by_id=doc.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
         )

@@ -1,15 +1,19 @@
 from datetime import datetime
-from typing import List, Optional, Any, Dict
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+
 from pydantic import BaseModel
+
 
 class ImportBatchBase(BaseModel):
     import_type: str
     filename: Optional[str] = None
     column_mapping: Optional[Dict[str, str]] = None
 
+
 class ImportBatchCreate(ImportBatchBase):
     pass
+
 
 class ImportLogResponse(BaseModel):
     row_number: Optional[int]
@@ -19,6 +23,7 @@ class ImportLogResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 class ImportBatchResponse(ImportBatchBase):
     id: UUID
@@ -30,9 +35,16 @@ class ImportBatchResponse(ImportBatchBase):
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
     error_message: Optional[str]
-    
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    created_by_id: Optional[UUID] = None
+    updated_by_id: Optional[UUID] = None
+    created_by: Optional[str] = None
+    updated_by: Optional[str] = None
+
     class Config:
         from_attributes = True
+
 
 class ImportBatchDetailResponse(ImportBatchResponse):
     logs: List[ImportLogResponse]

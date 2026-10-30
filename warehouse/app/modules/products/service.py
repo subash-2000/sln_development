@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import EntityStatus
 from app.core.exceptions import ConflictException, NotFoundException
 from app.models.company import Company
@@ -43,7 +43,12 @@ class ProductService:
         cats = await self.repo.list_uom_categories()
         return [UomCategoryResponse(id=c.id, name=c.name) for c in cats]
 
-    def _uom_to_response(self, u: UOM) -> UomResponse:
+    def _uom_to_response(
+        self,
+        u: UOM,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> UomResponse:
         return UomResponse(
             id=u.id,
             category_id=u.category_id,
@@ -54,6 +59,12 @@ class ProductService:
             factor=u.factor,
             rounding_precision=u.rounding_precision,
             status=u.status,
+            created_at=u.created_at,
+            updated_at=u.updated_at,
+            created_by_id=u.created_by_id,
+            updated_by_id=u.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
         )
 
     async def list_uoms(self) -> list[UomResponse]:
@@ -64,7 +75,10 @@ class ProductService:
         uom = await self.repo.get_uom_by_id(uom_id)
         if not uom:
             raise NotFoundException(f"UOM '{uom_id}' not found")
-        return self._uom_to_response(uom)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, uom.created_by_id, uom.updated_by_id
+        )
+        return self._uom_to_response(uom, created_by=created_by_name, updated_by=updated_by_name)
 
     async def create_uom(self, req: UomCreateRequest) -> UomResponse:
         cat = await self.db.execute(select(UomCategory).where(UomCategory.id == req.category_id))
@@ -180,6 +194,9 @@ class ProductService:
                 f"Product category '{category_id}' not found",
                 error_code="CATEGORY_NOT_FOUND",
             )
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, cat.created_by_id, cat.updated_by_id
+        )
         return ProductCategoryResponse(
             id=cat.id,
             company_id=cat.company_id,
@@ -188,6 +205,12 @@ class ProductService:
             parent_id=cat.parent_id,
             description=cat.description,
             status=cat.status,
+            created_at=cat.created_at,
+            updated_at=cat.updated_at,
+            created_by_id=cat.created_by_id,
+            updated_by_id=cat.updated_by_id,
+            created_by=created_by_name,
+            updated_by=updated_by_name,
         )
 
     async def update_category(
@@ -226,6 +249,38 @@ class ProductService:
             status=full_cat.status,
         )
 
+    async def delete_category(self, category_id: uuid.UUID) -> dict:
+        cat = await self.repo.get_category_by_id(category_id)
+        if not cat:
+            raise NotFoundException(
+                f"Product category '{category_id}' not found",
+                error_code="CATEGORY_NOT_FOUND",
+            )
+        children_count = await self.repo.count_category_children(category_id)
+        if children_count > 0:
+            raise ConflictException(
+                f"Cannot delete category '{cat.name}' because it has {children_count} sub-category(ies). Please reassign or delete child categories first.",
+                error_code="CATEGORY_HAS_CHILDREN",
+            )
+        products_count = await self.repo.count_category_products(category_id)
+        if products_count > 0:
+            raise ConflictException(
+                f"Cannot delete category '{cat.name}' because {products_count} product(s) are assigned to it. Please reassign the products first.",
+                error_code="CATEGORY_HAS_PRODUCTS",
+            )
+        await self.repo.delete_category(cat)
+        await log_audit(
+            db=self.db,
+            action="DELETE",
+            module="products",
+            entity_name="ProductCategory",
+            entity_id=str(category_id),
+            company_id=cat.company_id,
+            old_values={"code": cat.code, "name": cat.name},
+        )
+        await self.db.commit()
+        return {"deleted": True, "id": str(category_id), "name": cat.name}
+
     # Product Item Services
     async def list_products(
         self,
@@ -259,8 +314,16 @@ class ProductService:
             raise NotFoundException(
                 f"Product with ID '{product_id}' not found", error_code="PRODUCT_NOT_FOUND"
             )
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, product.created_by_id, product.updated_by_id
+        )
         vendor_map = await self._vendor_links_map([product.id])
-        return self._to_response(product, vendor_map.get(product.id, ([], [])))
+        return self._to_response(
+            product,
+            vendor_map.get(product.id, ([], [])),
+            created_by=created_by_name,
+            updated_by=updated_by_name,
+        )
 
     async def create_product(self, req: ProductCreateRequest) -> ProductResponse:
         # 1. Verify Company exists
@@ -509,6 +572,8 @@ class ProductService:
         self,
         product: Product,
         vendor_link: tuple[list[uuid.UUID], list[str]] = ([], []),
+        created_by: str | None = None,
+        updated_by: str | None = None,
     ) -> ProductResponse:
         return ProductResponse(
             id=product.id,
@@ -550,4 +615,9 @@ class ProductService:
             vendor_ids=vendor_link[0],
             vendor_names=vendor_link[1],
             created_at=product.created_at,
+            updated_at=product.updated_at,
+            created_by_id=product.created_by_id,
+            updated_by_id=product.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
         )

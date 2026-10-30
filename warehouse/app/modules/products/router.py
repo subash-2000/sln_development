@@ -197,6 +197,22 @@ async def update_category(
     return success_response(data=updated.model_dump(), message="Category updated successfully")
 
 
+@router.delete(
+    "/product-categories/{category_id}",
+    response_model=StandardResponse[dict],
+    status_code=status.HTTP_200_OK,
+    summary="Delete Product Category",
+)
+async def delete_category(
+    category_id: uuid.UUID,
+    current_user: User = Depends(require_permission("master.product.write")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = ProductService(db)
+    res = await service.delete_category(category_id)
+    return success_response(data=res, message="Category deleted successfully")
+
+
 # Product Item Endpoints
 @router.get(
     "/products",

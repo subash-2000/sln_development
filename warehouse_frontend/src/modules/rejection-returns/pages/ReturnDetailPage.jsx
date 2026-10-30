@@ -5,6 +5,7 @@ import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import Loader from '../../../components/common/Loader';
+import { formatDateTime } from '../../../utils/formatters';
 import { useReturn, useReturnActions } from '../hooks/use-returns';
 
 const ReturnDetailPage = () => {
@@ -134,6 +135,22 @@ const ReturnDetailPage = () => {
           <div>
             <span className="text-gray-500">Customer</span>
             <p className="font-medium mt-1">{order.customer_name || '—'}</p>
+          </div>
+          <div>
+            <span className="text-gray-500">Created At</span>
+            <p className="font-medium mt-1">{order.created_at ? formatDateTime(order.created_at) : '—'}</p>
+          </div>
+          <div>
+            <span className="text-gray-500">Created By</span>
+            <p className="font-medium mt-1">{order.created_by || '—'}</p>
+          </div>
+          <div>
+            <span className="text-gray-500">Last Updated</span>
+            <p className="font-medium mt-1">{order.updated_at ? formatDateTime(order.updated_at) : '—'}</p>
+          </div>
+          <div>
+            <span className="text-gray-500">Updated By</span>
+            <p className="font-medium mt-1">{order.updated_by || '—'}</p>
           </div>
           {order.notes && (
             <div className="md:col-span-3">

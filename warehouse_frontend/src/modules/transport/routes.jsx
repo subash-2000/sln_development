@@ -9,6 +9,7 @@ export const transportRoutes = [
     path: 'transport',
     children: [
       { index: true, element: <TransporterListPage /> },
+      { path: 'vehicles', element: <TransporterListPage /> },
       { path: 'new', element: <TransporterCreatePage /> },
       { path: ':id', element: <TransporterEditPage /> },
       { path: ':id/edit', element: <TransporterEditPage /> },

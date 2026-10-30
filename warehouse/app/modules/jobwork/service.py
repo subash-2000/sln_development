@@ -5,7 +5,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import (
     AuditAction,
     JobWorkOrderStatus,
@@ -154,7 +154,15 @@ class JobWorkService:
         order = await self.repo.get_job_work_order(jwo_id, company_id=company_id)
         if not order:
             raise NotFoundException(f"Job Work Order {jwo_id} not found")
-        return self._serialize_jwo(order, include_list_summary=False)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, order.created_by_id, order.updated_by_id
+        )
+        return self._serialize_jwo(
+            order,
+            include_list_summary=False,
+            created_by=created_by_name,
+            updated_by=updated_by_name,
+        )
 
     async def list_job_work_orders(
         self,
@@ -639,7 +647,11 @@ class JobWorkService:
         return JobberWipSummary(**res)
 
     def _serialize_jwo(
-        self, order: JobWorkOrder, include_list_summary: bool = False
+        self,
+        order: JobWorkOrder,
+        include_list_summary: bool = False,
+        created_by: str | None = None,
+        updated_by: str | None = None,
     ) -> JobWorkOrderResponse:
         lines: list[JobWorkOrderLineResponse] = []
         total_ordered = Decimal("0")
@@ -703,6 +715,11 @@ class JobWorkService:
             bom_reference=order.bom_reference,
             notes=order.notes,
             created_at=order.created_at,
+            updated_at=order.updated_at,
+            created_by_id=order.created_by_id,
+            updated_by_id=order.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
             vendor_name=order.vendor.name if order.vendor else None,
             warehouse_name=order.warehouse.name if order.warehouse else None,
             lines=lines,

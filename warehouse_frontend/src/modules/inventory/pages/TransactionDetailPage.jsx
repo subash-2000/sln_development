@@ -206,6 +206,18 @@ const TransactionDetailPage = () => {
             <p className="text-gray-500">Remarks</p>
             <p className="font-medium">{tx.remarks || '—'}</p>
           </div>
+          <div>
+            <p className="text-gray-500">Created By</p>
+            <p className="font-medium">{tx.created_by || tx.created_by_name || '—'}</p>
+          </div>
+          <div>
+            <p className="text-gray-500">Last Updated</p>
+            <p className="font-medium">{tx.updated_at ? formatDateTime(tx.updated_at) : '—'}</p>
+          </div>
+          <div>
+            <p className="text-gray-500">Updated By</p>
+            <p className="font-medium">{tx.updated_by || '—'}</p>
+          </div>
         </Card.Body>
       </Card>
 

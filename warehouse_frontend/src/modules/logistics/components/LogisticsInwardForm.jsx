@@ -150,6 +150,26 @@ const LogisticsInwardForm = ({ onSubmit, isLoading, parsedData }) => {
   const { data: vendorsData } = useVendors();
   const { data: productsData } = useProducts({ page_size: 200 });
   const { data: uomsData } = useUOMs();
+
+  const warehouses = useMemo(() => {
+    return (warehousesData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [warehousesData]);
+
+  const vendors = useMemo(() => {
+    return (vendorsData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [vendorsData]);
+
+  const uoms = useMemo(() => {
+    const list = Array.isArray(uomsData) ? uomsData : (uomsData?.items || []);
+    return list.slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [uomsData]);
+
   const [lotPanelOpen, setLotPanelOpen] = useState(false);
   const [remarkModalIndex, setRemarkModalIndex] = useState(null);
   const [remarkDraft, setRemarkDraft] = useState('');
@@ -449,7 +469,7 @@ const LogisticsInwardForm = ({ onSubmit, isLoading, parsedData }) => {
             <label htmlFor="warehouse_id" className="text-xs font-medium text-gray-600">Warehouse</label>
             <select id="warehouse_id" {...register('warehouse_id')} className={lineSelectClass}>
               <option value="">Select Warehouse</option>
-              {warehousesData?.items?.map((wh) => (
+              {warehouses.map((wh) => (
                 <option key={wh.id} value={wh.id}>{wh.name}</option>
               ))}
             </select>
@@ -460,7 +480,7 @@ const LogisticsInwardForm = ({ onSubmit, isLoading, parsedData }) => {
             <label htmlFor="vendor_id" className="text-xs font-medium text-gray-600">Supplier</label>
             <select id="vendor_id" {...register('vendor_id')} className={lineSelectClass}>
               <option value="">Select Supplier</option>
-              {vendorsData?.items?.map((v) => (
+              {vendors.map((v) => (
                 <option key={v.id} value={v.id}>{v.name}</option>
               ))}
             </select>
@@ -697,7 +717,7 @@ const LogisticsInwardForm = ({ onSubmit, isLoading, parsedData }) => {
                     className={lineSelectClass}
                   >
                     <option value="">UOM</option>
-                    {uomsData?.map((u) => (
+                    {uoms.map((u) => (
                       <option key={u.id} value={u.id}>{u.code}</option>
                     ))}
                   </select>

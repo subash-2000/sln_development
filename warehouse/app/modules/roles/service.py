@@ -2,7 +2,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.exceptions import BusinessRuleException, ConflictException, NotFoundException
 from app.models.rbac import Role
 from app.modules.roles.repository import PermissionRepository, RoleRepository
@@ -31,7 +31,10 @@ class RoleService:
             raise NotFoundException(
                 f"Role with ID '{role_id}' not found", error_code="ROLE_NOT_FOUND"
             )
-        return self._to_response(role)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, role.created_by_id, role.updated_by_id
+        )
+        return self._to_response(role, created_by=created_by_name, updated_by=updated_by_name)
 
     async def create_role(self, req: RoleCreateRequest) -> RoleResponse:
         clean_code = req.code.strip().upper()
@@ -186,7 +189,12 @@ class RoleService:
             for p in perms
         ]
 
-    def _to_response(self, role: Role) -> RoleResponse:
+    def _to_response(
+        self,
+        role: Role,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> RoleResponse:
         perms = []
         for rp in getattr(role, "role_permissions", []):
             if rp.permission:
@@ -207,4 +215,10 @@ class RoleService:
             is_system_role=role.is_system_role,
             is_active=role.is_active,
             permissions=sorted(perms, key=lambda x: (x.module, x.code)),
+            created_at=role.created_at,
+            updated_at=role.updated_at,
+            created_by_id=role.created_by_id,
+            updated_by_id=role.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
         )

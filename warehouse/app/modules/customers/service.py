@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import EntityStatus
 from app.core.exceptions import ConflictException, NotFoundException
 from app.models.company import Company
@@ -48,7 +48,10 @@ class CustomerService:
             raise NotFoundException(
                 f"Customer with ID '{customer_id}' not found", error_code="CUSTOMER_NOT_FOUND"
             )
-        return self._to_response(customer)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, customer.created_by_id, customer.updated_by_id
+        )
+        return self._to_response(customer, created_by=created_by_name, updated_by=updated_by_name)
 
     async def create_customer(self, req: CustomerCreateRequest) -> CustomerResponse:
         # 1. Verify company exists
@@ -168,7 +171,12 @@ class CustomerService:
         full_customer = await self.repo.get_by_id(customer_id)
         return self._to_response(full_customer)
 
-    def _to_response(self, customer: Customer) -> CustomerResponse:
+    def _to_response(
+        self,
+        customer: Customer,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> CustomerResponse:
         return CustomerResponse(
             id=customer.id,
             company_id=customer.company_id,
@@ -190,4 +198,9 @@ class CustomerService:
             status=customer.status,
             is_buyer=bool(customer.is_buyer),
             created_at=customer.created_at,
+            updated_at=customer.updated_at,
+            created_by_id=customer.created_by_id,
+            updated_by_id=customer.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
         )

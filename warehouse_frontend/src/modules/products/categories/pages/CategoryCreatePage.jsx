@@ -14,7 +14,7 @@ const CategoryCreatePage = () => {
     setErrorMsg(null);
     try {
       await createCategory(formData);
-      navigate('/masters/products/categories');
+      navigate('/products/categories');
     } catch (error) {
       console.error('Failed to create category:', error);
       setErrorMsg(
@@ -33,8 +33,8 @@ const CategoryCreatePage = () => {
         breadcrumbs={[
           { label: 'Dashboard', to: '/dashboard' },
           { label: 'Masters' },
-          { label: 'Products', to: '/masters/products' },
-          { label: 'Product Categories', to: '/masters/products/categories' },
+          { label: 'Products', to: '/products' },
+          { label: 'Product Categories', to: '/products/categories' },
           { label: 'Add Category' },
         ]}
       />

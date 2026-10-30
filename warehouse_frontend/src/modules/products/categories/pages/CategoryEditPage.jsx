@@ -25,7 +25,7 @@ const CategoryEditPage = () => {
           status: formData.status,
         },
       });
-      navigate('/masters/products/categories');
+      navigate('/products/categories');
     } catch (err) {
       console.error('Failed to update category:', err);
       setErrorMsg(
@@ -50,7 +50,7 @@ const CategoryEditPage = () => {
         <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
           Failed to load category details. It may not exist or has been removed.
         </div>
-        <Button variant="outline" onClick={() => navigate('/masters/products/categories')}>
+        <Button variant="outline" onClick={() => navigate('/products/categories')}>
           <ArrowLeft size={16} className="mr-2" />
           Back to Categories
         </Button>
@@ -66,8 +66,8 @@ const CategoryEditPage = () => {
         breadcrumbs={[
           { label: 'Dashboard', to: '/dashboard' },
           { label: 'Masters' },
-          { label: 'Products', to: '/masters/products' },
-          { label: 'Product Categories', to: '/masters/products/categories' },
+          { label: 'Products', to: '/products' },
+          { label: 'Product Categories', to: '/products/categories' },
           { label: 'Edit Category' },
         ]}
       />

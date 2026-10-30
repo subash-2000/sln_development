@@ -21,7 +21,13 @@ const selectClass =
   'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500';
 
 const UomForm = ({ onSubmit, isLoading, defaultValues, isEdit = false }) => {
-  const { data: categories = [] } = useUomCategories();
+  const { data: rawCategories = [] } = useUomCategories();
+  const categories = React.useMemo(() => {
+    const list = Array.isArray(rawCategories) ? rawCategories : (rawCategories?.items || []);
+    return list.slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [rawCategories]);
 
   const {
     register,

@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -40,3 +41,9 @@ class RoleResponse(BaseModel):
     is_system_role: bool
     is_active: bool
     permissions: list[PermissionResponse] = Field(default_factory=list)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by_id: uuid.UUID | None = None
+    updated_by_id: uuid.UUID | None = None
+    created_by: str | None = None
+    updated_by: str | None = None

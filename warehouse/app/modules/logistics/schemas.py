@@ -93,6 +93,10 @@ class DispatchOrderResponse(BaseModel):
     lines: list[DispatchOrderLineResponse] = []
     created_at: datetime
     updated_at: datetime
+    created_by_id: UUID | None = None
+    updated_by_id: UUID | None = None
+    created_by: str | None = None
+    updated_by: str | None = None
 
 
 class GatePassCreate(BaseModel):
@@ -135,6 +139,10 @@ class GatePassResponse(BaseModel):
     remarks: str | None = None
     created_at: datetime
     updated_at: datetime
+    created_by_id: UUID | None = None
+    updated_by_id: UUID | None = None
+    created_by: str | None = None
+    updated_by: str | None = None
 
 
 class InwardPackageLine(BaseModel):

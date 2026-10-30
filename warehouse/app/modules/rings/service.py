@@ -5,7 +5,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import (
     AuditAction,
     InvoiceWorkflow,
@@ -84,7 +84,12 @@ class RingsService:
         self.repo = RingsRepository(db)
         self.inv_repo = InventoryRepository(db)
 
-    def _serialize(self, doc: RingsDocument) -> RingsDocumentResponse:
+    def _serialize(
+        self,
+        doc: RingsDocument,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> RingsDocumentResponse:
         lines = [
             RingsLineResponse(
                 id=line.id,
@@ -161,6 +166,11 @@ class RingsService:
             remarks=doc.remarks,
             lines=lines,
             created_at=doc.created_at,
+            updated_at=doc.updated_at,
+            created_by_id=doc.created_by_id,
+            updated_by_id=doc.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
         )
 
     async def list_supplier_types(
@@ -173,10 +183,10 @@ class RingsService:
                 RingsSupplierType.vendor_id == vendor_id,
                 RingsSupplierType.is_active.is_(True),
             )
-            .order_by(RingsSupplierType.created_at)
+            .order_by(RingsSupplierType.supplier_type.asc())
         )
         rows = (await self.db.execute(stmt)).scalars().all()
-        rows = sorted(rows, key=lambda row: (row.product.sku if row.product else ""))
+        rows = sorted(rows, key=lambda row: ((row.product.sku if row.product and row.product.sku else (row.supplier_type or "")).lower()))
         return [_serialize_supplier_type(row) for row in rows]
 
     async def _get_vendor(self, vendor_id: uuid.UUID, company_id: uuid.UUID) -> Vendor:
@@ -721,7 +731,10 @@ class RingsService:
         doc = await self.repo.get_by_id(doc_id, company_id)
         if not doc:
             raise NotFoundException("Rings document not found")
-        return self._serialize(doc)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, doc.created_by_id, doc.updated_by_id
+        )
+        return self._serialize(doc, created_by=created_by_name, updated_by=updated_by_name)
 
     async def list_stock(self, company_id: uuid.UUID, vendor_id=None, warehouse_id=None) -> list[RingsStockRow]:
         quants = await self.repo.list_heat_stock(company_id, vendor_id, warehouse_id)

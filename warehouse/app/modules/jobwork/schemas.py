@@ -60,6 +60,11 @@ class JobWorkOrderResponse(BaseModel):
     bom_reference: str | None = None
     notes: str | None = None
     created_at: datetime
+    updated_at: datetime | None = None
+    created_by_id: uuid.UUID | None = None
+    updated_by_id: uuid.UUID | None = None
+    created_by: str | None = None
+    updated_by: str | None = None
     vendor_name: str | None = None
     warehouse_name: str | None = None
     lines: list[JobWorkOrderLineResponse] = []

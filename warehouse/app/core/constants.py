@@ -56,6 +56,7 @@ class WarehouseType(str, Enum):
     LEASED = "LEASED"
     BONDED = "BONDED"
     THIRD_PARTY = "THIRD_PARTY"
+    VENDOR = "VENDOR"
     VIRTUAL = "VIRTUAL"
 
 

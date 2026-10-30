@@ -6,7 +6,11 @@ import { useAuthStore } from '../../store/auth.store';
 const CompanyFilter = () => {
   const { companyContext, setContext } = useAuthStore();
   const { data: companiesData, isLoading } = useCompanies({ page_size: 100 });
-  const companies = companiesData?.items || [];
+  const companies = React.useMemo(() => {
+    return (companiesData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [companiesData]);
 
   const handleChange = (e) => {
     setContext(e.target.value, null);

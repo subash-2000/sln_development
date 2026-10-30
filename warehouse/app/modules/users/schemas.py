@@ -78,7 +78,12 @@ class UserSummaryResponse(BaseModel):
     is_superuser: bool
     status: str
     last_login: datetime | None = None
-    created_at: datetime
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by_id: uuid.UUID | None = None
+    updated_by_id: uuid.UUID | None = None
+    created_by: str | None = None
+    updated_by: str | None = None
     roles: list[str] = Field(default_factory=list)
 
 

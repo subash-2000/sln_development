@@ -234,8 +234,17 @@ const RingsInwardCreatePage = () => {
   const { data: warehousesData } = useWarehouses();
   const { data: vendorsData } = useVendors({ page_size: 200, status: 'ACTIVE' });
   const { data: uomsData } = useUOMs();
-  const warehouses = warehousesData?.items || [];
-  const vendors = vendorsData?.items || [];
+  const warehouses = useMemo(() => {
+    return (warehousesData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [warehousesData]);
+
+  const vendors = useMemo(() => {
+    return (vendorsData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [vendorsData]);
 
   const { register, control, handleSubmit, watch, setValue, getValues, reset } = useForm({
     shouldUnregister: true,
@@ -271,9 +280,10 @@ const RingsInwardCreatePage = () => {
   const productOptions = useMemo(() => {
     if (!vendorId) return [];
     const types = Array.isArray(supplierTypes) ? supplierTypes : [];
+    let list = [];
     if (types.length) {
       const seen = new Set();
-      return types.flatMap((t) => {
+      list = types.flatMap((t) => {
         const id = String(t.product_id);
         if (seen.has(id)) return [];
         seen.add(id);
@@ -287,8 +297,12 @@ const RingsInwardCreatePage = () => {
           packing_ratio: t.packing_ratio,
         }];
       });
+    } else {
+      list = catalogData?.items || [];
     }
-    return catalogData?.items || [];
+    return list.slice().sort((a, b) =>
+      (a.sku || a.name || '').localeCompare(b.sku || b.name || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
   }, [vendorId, supplierTypes, catalogData]);
 
   useEffect(() => {

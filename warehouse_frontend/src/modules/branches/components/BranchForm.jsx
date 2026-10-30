@@ -35,7 +35,11 @@ const getInitialBranchValues = (data) => {
 
 const BranchForm = ({ initialData, onSubmit, isLoading, isEdit = false }) => {
   const { data: companiesData } = useCompanies({ page_size: 100 });
-  const companies = companiesData?.items || [];
+  const companies = useMemo(() => {
+    return (companiesData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [companiesData]);
 
   const { data: branchesData } = useBranches({ page_size: 1000 });
   const existingBranches = useMemo(() => {

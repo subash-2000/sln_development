@@ -64,7 +64,7 @@ class UserRepository:
         total = total_res.scalar() or 0
 
         # Paginated results
-        query = query.order_by(User.created_at.desc()).offset(offset).limit(limit)
+        query = query.order_by(User.full_name.asc(), User.username.asc()).offset(offset).limit(limit)
         result = await self.db.execute(query)
         users = list(result.scalars().all())
 

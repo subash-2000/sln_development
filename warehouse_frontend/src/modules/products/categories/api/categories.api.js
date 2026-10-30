@@ -7,4 +7,5 @@ export const categoriesApi = {
   getById: async (id) => unwrapData(await apiClient.get(ENDPOINTS.PRODUCTS.CATEGORIES.DETAIL(id))),
   create: async (data) => unwrapData(await apiClient.post(ENDPOINTS.PRODUCTS.CATEGORIES.CREATE, data)),
   update: async (id, data) => unwrapData(await apiClient.put(ENDPOINTS.PRODUCTS.CATEGORIES.UPDATE(id), data)),
+  delete: async (id) => unwrapData(await apiClient.delete(ENDPOINTS.PRODUCTS.CATEGORIES.DELETE(id))),
 };

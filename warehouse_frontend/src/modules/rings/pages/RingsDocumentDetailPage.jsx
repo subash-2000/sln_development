@@ -204,6 +204,10 @@ const RingsDocumentDetailPage = () => {
           {!isInward && <Field label="Buyer">{dash(data.customer_name)}</Field>}
           {!isInward && <Field label="SLN challan">{dash(data.sln_challan_number)}</Field>}
           <Field label="Remarks" className="md:col-span-3">{dash(data.remarks)}</Field>
+          <Field label="Created At">{formatShortDate(data.created_at)}</Field>
+          <Field label="Created By">{dash(data.created_by)}</Field>
+          <Field label="Last Updated">{formatShortDate(data.updated_at)}</Field>
+          <Field label="Updated By">{dash(data.updated_by)}</Field>
         </Card.Body>
       </Card>
 

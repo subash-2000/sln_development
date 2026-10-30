@@ -79,7 +79,7 @@ class VendorRepository:
             else:
                 query = query.order_by(order_col.asc())
         else:
-            query = query.order_by(Vendor.created_at.desc())
+            query = query.order_by(Vendor.name.asc(), Vendor.code.asc())
 
         query = query.offset(offset).limit(limit)
         result = await self.db.execute(query)

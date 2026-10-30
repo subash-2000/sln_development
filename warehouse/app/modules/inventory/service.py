@@ -5,7 +5,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import (
     AuditAction,
     LocationType,
@@ -55,7 +55,12 @@ class InventoryService:
             }
         )
 
-    def _serialize_transaction(self, tx: StockTransaction) -> StockTransactionResponse:
+    def _serialize_transaction(
+        self,
+        tx: StockTransaction,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> StockTransactionResponse:
         pkg_meta = parse_packages_from_remarks(tx.remarks)
         package_lines = pkg_meta.get("lines", []) if pkg_meta else []
         total_packages = pkg_meta.get("total_packages") if pkg_meta else None
@@ -79,6 +84,12 @@ class InventoryService:
             total_packages=total_packages,
             confirmed_at=tx.confirmed_at,
             created_at=tx.created_at,
+            updated_at=tx.updated_at,
+            created_by_id=tx.created_by_id,
+            updated_by_id=tx.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
+            created_by_name=created_by,
             moves=[self._serialize_move(m) for m in tx.moves],
         )
 
@@ -916,4 +927,9 @@ class InventoryService:
         tx = await self.repo.get_transaction_by_id(transaction_id, company_id=company_id)
         if not tx:
             raise NotFoundException(f"Transaction with ID {transaction_id} not found")
-        return self._serialize_transaction(tx)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, tx.created_by_id, tx.updated_by_id
+        )
+        return self._serialize_transaction(
+            tx, created_by=created_by_name, updated_by=updated_by_name
+        )

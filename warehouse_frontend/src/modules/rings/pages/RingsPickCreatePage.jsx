@@ -126,9 +126,21 @@ const RingsPickCreatePage = () => {
     return rows;
   }, [stock]);
 
-  const warehouses = warehousesData?.items || [];
-  const vendors = vendorsData?.items || [];
-  const buyers = customersData?.items || [];
+  const warehouses = useMemo(() => {
+    return (warehousesData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [warehousesData]);
+  const vendors = useMemo(() => {
+    return (vendorsData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [vendorsData]);
+  const buyers = useMemo(() => {
+    return (customersData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [customersData]);
   const vendor = vendors.find((v) => String(v.id) === String(vendorId));
   const buyer = buyers.find((c) => String(c.id) === String(customerId));
   const workflowOptions = [

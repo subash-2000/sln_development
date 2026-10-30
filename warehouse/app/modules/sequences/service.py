@@ -2,7 +2,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.exceptions import ConflictException, NotFoundException
 from app.models.sequence import Sequence
 from app.modules.sequences.repository import SequenceRepository
@@ -28,7 +28,10 @@ class SequenceAdminService:
             raise NotFoundException(
                 f"Sequence with ID '{seq_id}' not found", error_code="SEQUENCE_NOT_FOUND"
             )
-        return self._to_response(seq)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, seq.created_by_id, seq.updated_by_id
+        )
+        return self._to_response(seq, created_by=created_by_name, updated_by=updated_by_name)
 
     async def create_sequence(self, req: SequenceCreateRequest) -> SequenceResponse:
         clean_doc_type = req.document_type.strip().upper()
@@ -118,7 +121,12 @@ class SequenceAdminService:
 
         return self._to_response(seq)
 
-    def _to_response(self, seq: Sequence) -> SequenceResponse:
+    def _to_response(
+        self,
+        seq: Sequence,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> SequenceResponse:
         return SequenceResponse(
             id=seq.id,
             document_type=seq.document_type,
@@ -131,4 +139,10 @@ class SequenceAdminService:
             company_id=seq.company_id,
             branch_id=seq.branch_id,
             is_active=seq.is_active,
+            created_at=seq.created_at,
+            updated_at=seq.updated_at,
+            created_by_id=seq.created_by_id,
+            updated_by_id=seq.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
         )

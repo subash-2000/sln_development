@@ -32,7 +32,7 @@ class RoleRepository:
         )
         if not include_inactive:
             stmt = stmt.where(Role.is_active.is_(True))
-        stmt = stmt.order_by(Role.is_system_role.desc(), Role.name)
+        stmt = stmt.order_by(Role.name.asc())
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 

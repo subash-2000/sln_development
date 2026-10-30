@@ -30,6 +30,10 @@ class BillingPeriodResponse(BaseModel):
     notes: str | None = None
     created_at: datetime
     updated_at: datetime
+    created_by_id: UUID | None = None
+    updated_by_id: UUID | None = None
+    created_by: str | None = None
+    updated_by: str | None = None
 
 
 class BillingLineResponse(BaseModel):
@@ -75,6 +79,10 @@ class BillingDocumentResponse(BaseModel):
     lines: list[BillingLineResponse] = []
     created_at: datetime
     updated_at: datetime
+    created_by_id: UUID | None = None
+    updated_by_id: UUID | None = None
+    created_by: str | None = None
+    updated_by: str | None = None
 
 
 class CalculateBillingRequest(BaseModel):

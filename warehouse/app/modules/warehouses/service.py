@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import AuditAction, EntityStatus
 from app.core.exceptions import ConflictException, NotFoundException
 from app.models.branch import Branch
@@ -49,7 +49,13 @@ class WarehouseService:
         warehouse = await self.repo.get_by_id(warehouse_id, company_id=company_id)
         if not warehouse:
             raise NotFoundException(f"Warehouse with ID {warehouse_id} not found")
-        return WarehouseResponse.model_validate(warehouse)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, warehouse.created_by_id, warehouse.updated_by_id
+        )
+        resp = WarehouseResponse.model_validate(warehouse)
+        resp.created_by = created_by_name
+        resp.updated_by = updated_by_name
+        return resp
 
     async def create_warehouse(
         self,
@@ -96,7 +102,7 @@ class WarehouseService:
             contact_person=request.contact_person,
             phone=request.phone,
             email=request.email,
-            address_line1=request.address_line1,
+            address_line1=request.address_line1 or request.address,
             address_line2=request.address_line2,
             city=request.city,
             state=request.state,
@@ -126,7 +132,13 @@ class WarehouseService:
         self.db.expunge_all()
 
         saved = await self.repo.get_by_id(target_id)
-        return WarehouseResponse.model_validate(saved)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, saved.created_by_id, saved.updated_by_id
+        )
+        resp = WarehouseResponse.model_validate(saved)
+        resp.created_by = created_by_name
+        resp.updated_by = updated_by_name
+        return resp
 
     async def update_warehouse(
         self,
@@ -164,8 +176,9 @@ class WarehouseService:
             warehouse.phone = request.phone
         if request.email is not None:
             warehouse.email = request.email
-        if request.address_line1 is not None:
-            warehouse.address_line1 = request.address_line1
+        new_address = request.address_line1 if request.address_line1 is not None else request.address
+        if new_address is not None:
+            warehouse.address_line1 = new_address
         if request.address_line2 is not None:
             warehouse.address_line2 = request.address_line2
         if request.city is not None:
@@ -202,7 +215,13 @@ class WarehouseService:
         self.db.expunge_all()
 
         saved = await self.repo.get_by_id(target_id)
-        return WarehouseResponse.model_validate(saved)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, saved.created_by_id, saved.updated_by_id
+        )
+        resp = WarehouseResponse.model_validate(saved)
+        resp.created_by = created_by_name
+        resp.updated_by = updated_by_name
+        return resp
 
     async def delete_warehouse(
         self,

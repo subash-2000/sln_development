@@ -5,7 +5,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import (
     AuditAction,
     ConsignmentStatus,
@@ -113,10 +113,23 @@ class VendorStockService:
         return [self._agreement_response(a) for a in agreements], total
 
     @staticmethod
-    def _agreement_response(agreement: ConsignmentAgreement) -> ConsignmentAgreementResponse:
+    def _agreement_response(
+        agreement: ConsignmentAgreement,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> ConsignmentAgreementResponse:
         base = ConsignmentAgreementResponse.model_validate(agreement)
         vendor = agreement.vendor
-        return base.model_copy(update={"vendor_name": vendor.name if vendor else None})
+        return base.model_copy(
+            update={
+                "vendor_name": vendor.name if vendor else None,
+                "created_by": created_by,
+                "updated_by": updated_by,
+                "created_by_id": agreement.created_by_id,
+                "updated_by_id": agreement.updated_by_id,
+                "updated_at": agreement.updated_at,
+            }
+        )
 
     async def get_agreement(
         self, agreement_id: uuid.UUID, company_id: uuid.UUID
@@ -124,7 +137,12 @@ class VendorStockService:
         agreement = await self.repo.get_agreement_by_id(agreement_id, company_id=company_id)
         if not agreement:
             raise NotFoundException(f"Consignment agreement {agreement_id} not found")
-        return self._agreement_response(agreement)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, agreement.created_by_id, agreement.updated_by_id
+        )
+        return self._agreement_response(
+            agreement, created_by=created_by_name, updated_by=updated_by_name
+        )
 
     async def process_title_transfer(
         self,

@@ -57,7 +57,7 @@ class CustomerRepository:
         total_res = await self.db.execute(count_query)
         total = total_res.scalar() or 0
 
-        query = query.order_by(Customer.created_at.desc()).offset(offset).limit(limit)
+        query = query.order_by(Customer.name.asc(), Customer.code.asc()).offset(offset).limit(limit)
         result = await self.db.execute(query)
         customers = list(result.scalars().all())
         return customers, total

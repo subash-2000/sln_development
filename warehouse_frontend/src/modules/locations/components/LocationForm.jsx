@@ -10,6 +10,12 @@ import { useWarehouses } from '../../warehouses/hooks/use-warehouses';
 const LocationForm = ({ initialData, onSubmit, isLoading, isEdit = false }) => {
   const { data: warehousesData } = useWarehouses();
 
+  const warehouses = React.useMemo(() => {
+    return (warehousesData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [warehousesData]);
+
   const {
     register,
     handleSubmit,
@@ -43,7 +49,7 @@ const LocationForm = ({ initialData, onSubmit, isLoading, isEdit = false }) => {
                 disabled={isEdit}
               >
                 <option value="">Select Warehouse</option>
-                {warehousesData?.items?.map(wh => (
+                {warehouses.map(wh => (
                   <option key={wh.id} value={wh.id}>{wh.name} ({wh.code})</option>
                 ))}
               </select>

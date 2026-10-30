@@ -9,7 +9,11 @@ const BranchFilter = () => {
     page_size: 100, 
     company_id: companyContext 
   });
-  const branches = branchesData?.items || [];
+  const branches = React.useMemo(() => {
+    return (branchesData?.items || []).slice().sort((a, b) =>
+      (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })
+    );
+  }, [branchesData]);
 
   const handleChange = (e) => {
     setContext(companyContext, e.target.value);

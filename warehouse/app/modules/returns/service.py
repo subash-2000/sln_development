@@ -5,7 +5,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import (
     AuditAction,
     LocationType,
@@ -529,7 +529,12 @@ class ReturnsService:
         order = await self.repo.get_return_order_by_id(order_id, company_id)
         if not order:
             raise NotFoundException(f"Return order with ID {order_id} not found")
-        return self._build_return_response(order)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, order.created_by_id, order.updated_by_id
+        )
+        return self._build_return_response(
+            order, created_by=created_by_name, updated_by=updated_by_name
+        )
 
     async def list_return_orders(
         self,
@@ -582,7 +587,12 @@ class ReturnsService:
             await self.db.flush()
         return loc
 
-    def _build_return_response(self, order: ReturnOrder) -> ReturnOrderResponse:
+    def _build_return_response(
+        self,
+        order: ReturnOrder,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> ReturnOrderResponse:
         lines_resp = [
             ReturnOrderLineResponse(
                 id=line.id,
@@ -629,4 +639,8 @@ class ReturnsService:
             lines=lines_resp,
             created_at=order.created_at,
             updated_at=order.updated_at,
+            created_by_id=order.created_by_id,
+            updated_by_id=order.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
         )

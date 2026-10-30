@@ -1,12 +1,15 @@
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import DateTime, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class AuditLog(Base):
@@ -91,6 +94,13 @@ class AuditLog(Base):
         String(100),
         nullable=True,
         index=True,
+    )
+
+    # Relationships
+    user: Mapped["User | None"] = relationship(
+        "User",
+        foreign_keys=[user_id],
+        lazy="selectin",
     )
 
 

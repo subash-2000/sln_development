@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import EntityStatus
 from app.core.exceptions import ConflictException, NotFoundException
 from app.models.billing import RateCard, RateCardItem
@@ -43,7 +43,10 @@ class RateCardService:
             raise NotFoundException(
                 f"Rate Card with ID '{rate_card_id}' not found", error_code="RATE_CARD_NOT_FOUND"
             )
-        return self._to_response(card)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, card.created_by_id, card.updated_by_id
+        )
+        return self._to_response(card, created_by=created_by_name, updated_by=updated_by_name)
 
     async def create_rate_card(self, req: RateCardCreateRequest) -> RateCardResponse:
         # 1. Verify Company exists
@@ -117,7 +120,12 @@ class RateCardService:
         full_card = await self.repo.get_by_id(rate_card_id)
         return self._to_response(full_card)
 
-    def _to_response(self, card: RateCard) -> RateCardResponse:
+    def _to_response(
+        self,
+        card: RateCard,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> RateCardResponse:
         return RateCardResponse(
             id=card.id,
             company_id=card.company_id,
@@ -146,4 +154,9 @@ class RateCardService:
                 for it in card.items
             ],
             created_at=card.created_at,
+            updated_at=card.updated_at,
+            created_by_id=card.created_by_id,
+            updated_by_id=card.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
         )

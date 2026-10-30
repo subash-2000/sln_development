@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit import log_audit
+from app.core.audit import get_audit_names, log_audit
 from app.core.constants import UserStatus
 from app.core.exceptions import BusinessRuleException, ConflictException, NotFoundException
 from app.core.security import hash_password
@@ -55,7 +55,10 @@ class UserService:
             raise NotFoundException(
                 f"User with ID '{user_id}' not found", error_code="USER_NOT_FOUND"
             )
-        return self._to_detail(user)
+        created_by_name, updated_by_name = await get_audit_names(
+            self.db, user.created_by_id, user.updated_by_id
+        )
+        return self._to_detail(user, created_by=created_by_name, updated_by=updated_by_name)
 
     async def create_user(self, req: UserCreateRequest) -> UserDetailResponse:
         clean_username = req.username.strip().lower()
@@ -358,7 +361,12 @@ class UserService:
                 f"Invalid role IDs: {[str(m) for m in missing]}", error_code="INVALID_ROLES"
             )
 
-    def _to_summary(self, user: User) -> UserSummaryResponse:
+    def _to_summary(
+        self,
+        user: User,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> UserSummaryResponse:
         roles = [
             ur.role.code for ur in getattr(user, "user_roles", []) if ur.role and ur.role.is_active
         ]
@@ -372,11 +380,21 @@ class UserService:
             status=user.status,
             last_login=user.last_login,
             created_at=user.created_at,
+            updated_at=user.updated_at,
+            created_by_id=user.created_by_id,
+            updated_by_id=user.updated_by_id,
+            created_by=created_by,
+            updated_by=updated_by,
             roles=sorted(list(set(roles))),
         )
 
-    def _to_detail(self, user: User) -> UserDetailResponse:
-        summary = self._to_summary(user)
+    def _to_detail(
+        self,
+        user: User,
+        created_by: str | None = None,
+        updated_by: str | None = None,
+    ) -> UserDetailResponse:
+        summary = self._to_summary(user, created_by=created_by, updated_by=updated_by)
         tenants = []
         for ucb in getattr(user, "company_branches", []):
             if ucb.company:
