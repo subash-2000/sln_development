@@ -22,7 +22,7 @@ const RAW_VEHICLE_TYPE_PRESETS = [
   'Van',
 ];
 
-export const VEHICLE_TYPE_PRESETS = sortAscending(RAW_VEHICLE_TYPE_PRESETS);
+const VEHICLE_TYPE_PRESETS = sortAscending(RAW_VEHICLE_TYPE_PRESETS);
 
 const defaultValues = {
   vehicle_number: '',

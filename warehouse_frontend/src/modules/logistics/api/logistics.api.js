@@ -2,9 +2,16 @@ import apiClient from '../../../services/api/client';
 import { ENDPOINTS } from '../../../services/api/endpoints';
 import { buildListParams, unwrapData, unwrapList } from '../../../services/api/unwrap';
 
+const asBlob = (payload) => {
+  if (payload instanceof Blob) return payload;
+  if (payload?.data instanceof Blob) return payload.data;
+  if (payload != null) return new Blob([payload]);
+  return null;
+};
+
 const downloadBlob = async (response, fallbackName) => {
-  const blob = response.data;
-  if (!(blob instanceof Blob)) {
+  const blob = asBlob(response);
+  if (!blob || blob.size === 0) {
     throw new Error('Invalid download response.');
   }
   const header = await blob.slice(0, 5).text();

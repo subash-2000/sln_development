@@ -90,9 +90,6 @@ const menuItems = [
       { icon: FileSpreadsheet, label: 'Invoicing & GST', path: '/invoicing' },
     ]
   },
-  { icon: BarChart3, label: 'Reports', path: '/reports' },
-  { icon: History, label: 'Audit Logs', path: '/audit' },
-  { icon: Database, label: 'Data Migration', path: '/migration' },
   { 
     label: 'Administration', 
     items: [
@@ -100,6 +97,20 @@ const menuItems = [
       { icon: Shield, label: 'Roles', path: '/roles' },
       { icon: ShieldCheck, label: 'Permissions', path: '/roles/permissions' },
       { icon: Settings, label: 'Settings', path: '/settings' },
+      { icon: History, label: 'Audit Logs', path: '/audit' },
+      { icon: Database, label: 'Data Migration', path: '/migration' },
+    ]
+  },
+  {
+    label: 'Reports',
+    items: [
+      { icon: Truck, label: 'Vehicle Reports', path: '/reports/vehicles' },
+      { icon: ArrowDownLeft, label: 'Inward Reports', path: '/reports/inward' },
+      { icon: ArrowUpRight, label: 'Outward Reports', path: '/reports/outward' },
+      { icon: Boxes, label: 'Daily Stock Reports', path: '/reports/daily-stock' },
+      { icon: Building2, label: 'Supplier Reports', path: '/reports/supplier-wise' },
+      { icon: FileSpreadsheet, label: 'Invoice Reports', path: '/reports/invoices' },
+      { icon: BarChart3, label: 'All Reports Hub', path: '/reports' },
     ]
   },
 ];

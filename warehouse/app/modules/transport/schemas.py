@@ -127,6 +127,11 @@ class TransporterCreateRequest(BaseModel):
             return v.strip().upper()
         return None
 
+    @field_validator("phone", "driver_phone")
+    @classmethod
+    def check_phones(cls, v: str | None) -> str | None:
+        return validate_phone_number(v)
+
 
 class TransporterUpdateRequest(BaseModel):
     name: str | None = Field(None, min_length=2, max_length=255)
@@ -161,6 +166,11 @@ class TransporterUpdateRequest(BaseModel):
         if v and v.strip():
             return v.strip().upper()
         return None
+
+    @field_validator("phone", "driver_phone")
+    @classmethod
+    def check_phones(cls, v: str | None) -> str | None:
+        return validate_phone_number(v)
 
 
 class TransporterResponse(BaseModel):

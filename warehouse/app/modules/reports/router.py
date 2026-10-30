@@ -1,4 +1,4 @@
-from typing import List
+from typing import Any, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -8,6 +8,8 @@ from app.core.dependencies import get_current_tenant_context, require_permission
 from app.core.pagination import PaginationParams, build_pagination_metadata
 from app.core.response import StandardResponse, success_response
 from app.modules.reports.schemas import (
+    VehicleMovementRow,
+    VehicleReportFilter,
     CurrentStockRow,
     InventoryReportFilter,
     JobWorkReportFilter,
@@ -27,6 +29,21 @@ router = APIRouter(prefix="/reports", tags=["Reports"])
 def _service(db=Depends(get_db)):
     return ReportingService(db)
 
+async def _resolve_company_id(
+    filters: Any,
+    context: TenantContext,
+    service: ReportingService
+) -> UUID | None:
+    if filters and getattr(filters, "company_id", None):
+        return filters.company_id
+    if context.company_id:
+        return context.company_id
+    from app.models.company import Company
+    from sqlalchemy import select
+    res = await service.db.execute(select(Company.id).limit(1))
+    return res.scalar_one_or_none()
+
+
 @router.get(
     "/inventory/current-stock",
     response_model=StandardResponse[List[CurrentStockRow]],
@@ -43,7 +60,7 @@ async def get_current_stock_report(
     Includes on-hand, reserved and available quantities per product/location/vendor.
     """
     # Enforce company isolation
-    company_id = context.company_id
+    company_id = await _resolve_company_id(filters, context, service)
     
     rows, total = await service.get_current_stock_report(
         company_id=company_id,
@@ -72,7 +89,7 @@ async def get_job_work_register(
     Generate Job Work Register Report.
     Shows issued, received, wastage, scrap and balance quantities for Job Work orders.
     """
-    company_id = context.company_id
+    company_id = await _resolve_company_id(filters, context, service)
     
     rows, total = await service.get_job_work_register(
         company_id=company_id,
@@ -101,7 +118,7 @@ async def get_vendor_stock_report(
     Generate Vendor Stock Report.
     Summary of stock levels grouped by vendor and product.
     """
-    company_id = context.company_id
+    company_id = await _resolve_company_id(filters, context, service)
     
     rows, total = await service.get_vendor_stock_report(
         company_id=company_id,
@@ -130,7 +147,7 @@ async def get_sales_report(
     Generate Sales Summary Report.
     List of invoices with taxable values and GST components.
     """
-    company_id = context.company_id
+    company_id = await _resolve_company_id(filters, context, service)
     
     rows, total = await service.get_sales_report(
         company_id=company_id,
@@ -159,7 +176,7 @@ async def get_inward_summary(
     Generate Inward Summary Report.
     Lists stock receipts with vendor and product details.
     """
-    company_id = context.company_id
+    company_id = await _resolve_company_id(filters, context, service)
     
     rows, total = await service.get_inward_summary(
         company_id=company_id,
@@ -188,7 +205,7 @@ async def get_outward_summary(
     Generate Outward Summary Report.
     Lists dispatch orders with customer/vendor and transport details.
     """
-    company_id = context.company_id
+    company_id = await _resolve_company_id(filters, context, service)
     
     rows, total = await service.get_outward_summary(
         company_id=company_id,
@@ -221,7 +238,7 @@ async def get_vendor_statement(
         from app.core.exceptions import AppException
         raise AppException("Vendor ID is required for statement", status_code=400)
         
-    company_id = context.company_id
+    company_id = await _resolve_company_id(filters, context, service)
     
     rows, total = await service.get_vendor_statement(
         company_id=company_id,
@@ -232,5 +249,33 @@ async def get_vendor_statement(
     return success_response(
         data=rows,
         message="Vendor statement generated successfully",
+        pagination=build_pagination_metadata(total, pagination)
+    )
+
+
+@router.get(
+    "/logistics/vehicles",
+    response_model=StandardResponse[List[VehicleMovementRow]],
+    dependencies=[Depends(require_permission("reports.inventory"))]
+)
+async def get_vehicle_movement_report(
+    filters: VehicleReportFilter = Depends(),
+    pagination: PaginationParams = Depends(),
+    context: TenantContext = Depends(get_current_tenant_context),
+    service: ReportingService = Depends(_service)
+):
+    """
+    Generate Vehicle Movement Report.
+    Lists dispatch orders and logistics movement with transporter and vehicle details.
+    """
+    company_id = await _resolve_company_id(filters, context, service)
+    rows, total = await service.get_vehicle_movement_report(
+        company_id=company_id,
+        filters=filters,
+        pagination=pagination
+    )
+    return success_response(
+        data=rows,
+        message="Vehicle movement report generated successfully",
         pagination=build_pagination_metadata(total, pagination)
     )

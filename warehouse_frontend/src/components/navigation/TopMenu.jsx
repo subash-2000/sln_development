@@ -162,6 +162,28 @@ const menuItems = [
       },
     ]
   },
+  {
+    label: 'Reports',
+    items: [
+      {
+        label: 'Logistics & Movement',
+        items: [
+          { icon: Truck, label: 'Vehicle Reports', path: '/reports/vehicles' },
+          { icon: ArrowDownLeft, label: 'Inward Reports', path: '/reports/inward' },
+          { icon: ArrowUpRight, label: 'Outward Reports', path: '/reports/outward' },
+        ]
+      },
+      {
+        label: 'Stock & Finance',
+        items: [
+          { icon: Boxes, label: 'Daily Stock Reports', path: '/reports/daily-stock' },
+          { icon: Building2, label: 'Supplier Reports', path: '/reports/supplier-wise' },
+          { icon: FileSpreadsheet, label: 'Invoice Reports', path: '/reports/invoices' },
+          { icon: BarChart3, label: 'All Reports Dashboard', path: '/reports' },
+        ]
+      }
+    ]
+  },
 ];
 
 const TopMenu = () => {

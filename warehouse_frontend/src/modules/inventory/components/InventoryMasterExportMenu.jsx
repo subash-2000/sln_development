@@ -53,11 +53,8 @@ const InventoryMasterExportMenu = ({ vendorId, vendors = [], onImported }) => {
       await inventoryApi.exportInventoryMaster(supplier);
 
     } catch (err) {
-
       console.error(err);
-
-      window.alert('Export failed. Please try again.');
-
+      window.alert(err?.message || 'Export failed. Please try again.');
     } finally {
 
       setLoading(false);

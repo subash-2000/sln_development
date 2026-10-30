@@ -170,4 +170,13 @@ export const ENDPOINTS = {
     BATCHES: '/migration/batches',
     BATCH_DETAIL: (id) => `/migration/batches/${id}`,
   },
+  REPORTS: {
+    VEHICLES: '/reports/logistics/vehicles',
+    INWARD: '/reports/inventory/inward-summary',
+    OUTWARD: '/reports/inventory/outward-summary',
+    CURRENT_STOCK: '/reports/inventory/current-stock',
+    VENDOR_STOCK: '/reports/inventory/vendor-stock',
+    SALES: '/reports/sales/summary',
+    JOB_WORK: '/reports/job-work/register',
+  },
 };
