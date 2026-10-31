@@ -704,8 +704,8 @@ class ReportingRepository:
                 .join(DispatchOrderLine, DispatchOrder.id == DispatchOrderLine.dispatch_order_id)
                 .join(Product, DispatchOrderLine.product_id == Product.id)
                 .join(UOM, DispatchOrderLine.uom_id == UOM.id)
-                .left_outer_join(Customer, DispatchOrder.customer_id == Customer.id)
-                .left_outer_join(Vendor, DispatchOrder.vendor_id == Vendor.id)
+                .outerjoin(Customer, DispatchOrder.customer_id == Customer.id)
+                .outerjoin(Vendor, DispatchOrder.vendor_id == Vendor.id)
                 
             )
             if company_id:
@@ -763,7 +763,7 @@ class ReportingRepository:
                 .join(RingsDocumentLine, RingsDocument.id == RingsDocumentLine.document_id)
                 .join(Product, RingsDocumentLine.product_id == Product.id)
                 .join(UOM, RingsDocumentLine.uom_id == UOM.id)
-                .left_outer_join(Vendor, RingsDocument.vendor_id == Vendor.id)
+                .outerjoin(Vendor, RingsDocument.vendor_id == Vendor.id)
                 .where(and_(
                                         RingsDocument.document_type == "INWARD",
                     RingsDocument.vehicle_number.isnot(None)
@@ -830,7 +830,7 @@ class ReportingRepository:
                 select(func.count())
                 .select_from(DispatchOrder)
                 .join(DispatchOrderLine, DispatchOrder.id == DispatchOrderLine.dispatch_order_id)
-                .left_outer_join(Vendor, DispatchOrder.vendor_id == Vendor.id)
+                .outerjoin(Vendor, DispatchOrder.vendor_id == Vendor.id)
                 
             )
             if company_id:
@@ -868,7 +868,7 @@ class ReportingRepository:
                 select(func.count())
                 .select_from(RingsDocument)
                 .join(RingsDocumentLine, RingsDocument.id == RingsDocumentLine.document_id)
-                .left_outer_join(Vendor, RingsDocument.vendor_id == Vendor.id)
+                .outerjoin(Vendor, RingsDocument.vendor_id == Vendor.id)
                 .where(and_(
                                         RingsDocument.document_type == "INWARD",
                     RingsDocument.vehicle_number.isnot(None)

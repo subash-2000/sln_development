@@ -178,5 +178,6 @@ export const ENDPOINTS = {
     VENDOR_STOCK: '/reports/inventory/vendor-stock',
     SALES: '/reports/sales/summary',
     JOB_WORK: '/reports/job-work/register',
+    EXPORT_EXCEL: '/reports/export/excel',
   },
 };

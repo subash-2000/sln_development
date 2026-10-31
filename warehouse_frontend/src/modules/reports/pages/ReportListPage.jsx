@@ -10,7 +10,8 @@ import {
   ArrowRight,
   Shield,
   FileText,
-  ClipboardList
+  ClipboardList,
+  Building2
 } from 'lucide-react';
 import PageHeader from '../../../components/common/PageHeader';
 import Card from '../../../components/ui/Card';

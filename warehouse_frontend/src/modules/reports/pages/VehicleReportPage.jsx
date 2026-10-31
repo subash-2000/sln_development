@@ -3,6 +3,7 @@ import {
   Truck, 
   Search, 
   Download, 
+  FileSpreadsheet,
   RotateCcw, 
   Eye, 
   Calendar,
@@ -22,6 +23,7 @@ import { useVehicleReports } from '../hooks/use-reports';
 import { useTransporters } from '../../transport/hooks/use-transporters';
 import { useVendors } from '../../vendors/hooks/use-vendors';
 import { exportReportToCsv } from '../api/reports.api';
+import { exportVehicleReportToExcel } from '../utils/excel-export';
 import VehicleReportViewModal from '../components/VehicleReportViewModal';
 
 const VehicleReportPage = () => {
@@ -107,6 +109,18 @@ const VehicleReportPage = () => {
     setDateTo('');
   };
 
+  const handleExportExcel = () => {
+    exportVehicleReportToExcel(filteredItems, {
+      movement_type: movementType,
+      vendor_name: selectedSupplier,
+      transporter_name: selectedTransporter,
+      status: selectedStatus,
+      date_from: dateFrom,
+      date_to: dateTo,
+      search: searchTerm,
+    });
+  };
+
   const handleExportCsv = () => {
     const headers = [
       'Vehicle Number',
@@ -145,8 +159,14 @@ const VehicleReportPage = () => {
     ]);
 
     const dateStr = new Date().toISOString().split('T')[0];
-    exportReportToCsv(headers, rows, `vehicle_movements_inward_outward_${dateStr}.csv`);
+    exportReportToCsv(headers, rows, `vehicle_movements_${movementType.toLowerCase()}_${dateStr}.csv`);
   };
+
+  const excelButtonLabel = useMemo(() => {
+    if (movementType === 'INWARD') return 'Export Excel (Inward Format)';
+    if (movementType === 'OUTWARD') return 'Export Excel (Outward Format)';
+    return 'Export Excel (All Trips)';
+  }, [movementType]);
 
   return (
     <div className="space-y-6">
@@ -158,19 +178,29 @@ const VehicleReportPage = () => {
           { label: 'Reports', to: '/reports' },
           { label: 'Vehicle Reports' },
         ]}
-      >
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            onClick={handleExportCsv}
-            disabled={filteredItems.length === 0}
-            className="flex items-center gap-2"
-          >
-            <Download size={16} />
-            Export CSV
-          </Button>
-        </div>
-      </PageHeader>
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              onClick={handleExportExcel}
+              disabled={filteredItems.length === 0}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-medium"
+            >
+              <FileSpreadsheet size={16} />
+              {excelButtonLabel}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleExportCsv}
+              disabled={filteredItems.length === 0}
+              className="flex items-center gap-2"
+            >
+              <Download size={16} />
+              Export CSV
+            </Button>
+          </div>
+        }
+      />
 
       {/* Movement Type Toggle Pills */}
       <div className="flex flex-wrap items-center gap-2">
@@ -347,6 +377,22 @@ const VehicleReportPage = () => {
               >
                 <RotateCcw size={16} />
               </button>
+            </div>
+
+            {/* Quick Export in Toolbar */}
+            <div className="flex items-center gap-2 lg:col-span-6 justify-between pt-2 border-t border-gray-100">
+              <span className="text-xs text-gray-500">
+                Showing {filteredItems.length} records matching filters
+              </span>
+              <Button
+                variant="primary"
+                onClick={handleExportExcel}
+                disabled={filteredItems.length === 0}
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-1.5 px-3 text-xs shadow-xs"
+              >
+                <FileSpreadsheet size={15} />
+                {excelButtonLabel}
+              </Button>
             </div>
           </div>
         </Card.Body>

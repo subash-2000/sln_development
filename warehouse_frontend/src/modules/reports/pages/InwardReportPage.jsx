@@ -3,6 +3,7 @@ import {
   ArrowDownLeft, 
   Search, 
   Download, 
+  FileSpreadsheet,
   RotateCcw, 
   Eye, 
   Calendar,
@@ -19,6 +20,7 @@ import Loader from '../../../components/common/Loader';
 import { useInwardReports } from '../hooks/use-reports';
 import { useVendors } from '../../vendors/hooks/use-vendors';
 import { exportReportToCsv } from '../api/reports.api';
+import { exportInwardReportToExcel } from '../utils/excel-export';
 import InwardReportViewModal from '../components/InwardReportViewModal';
 
 const InwardReportPage = () => {
@@ -58,8 +60,12 @@ const InwardReportPage = () => {
   // Client-side filtering
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
-      if (selectedVendor && (item.vendor_name || '').trim().toLowerCase() !== selectedVendor.trim().toLowerCase()) {
-        return false;
+      if (selectedVendor) {
+        const itemV = (item.vendor_name || '').trim().toLowerCase();
+        const selV = selectedVendor.trim().toLowerCase();
+        if (itemV !== selV && !itemV.includes(selV) && !selV.includes(itemV)) {
+          return false;
+        }
       }
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
@@ -85,6 +91,15 @@ const InwardReportPage = () => {
     setSelectedVendor('');
     setDateFrom('');
     setDateTo('');
+  };
+
+  const handleExportExcel = () => {
+    exportInwardReportToExcel(filteredItems, {
+      vendor_name: selectedVendor,
+      date_from: dateFrom,
+      date_to: dateTo,
+      search: searchTerm,
+    });
   };
 
   const handleExportCsv = () => {
@@ -124,19 +139,29 @@ const InwardReportPage = () => {
           { label: 'Reports', to: '/reports' },
           { label: 'Inward Reports' },
         ]}
-      >
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            onClick={handleExportCsv}
-            disabled={filteredItems.length === 0}
-            className="flex items-center gap-2"
-          >
-            <Download size={16} />
-            Export CSV
-          </Button>
-        </div>
-      </PageHeader>
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              onClick={handleExportExcel}
+              disabled={filteredItems.length === 0}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-medium"
+            >
+              <FileSpreadsheet size={16} />
+              Export Excel (Receipt Sheet)
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleExportCsv}
+              disabled={filteredItems.length === 0}
+              className="flex items-center gap-2"
+            >
+              <Download size={16} />
+              Export CSV
+            </Button>
+          </div>
+        }
+      />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -182,7 +207,7 @@ const InwardReportPage = () => {
       {/* Filters Toolbar */}
       <Card>
         <Card.Body className="p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-center">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
               <input
@@ -235,6 +260,18 @@ const InwardReportPage = () => {
               >
                 <RotateCcw size={16} />
               </button>
+            </div>
+
+            <div>
+              <Button
+                variant="primary"
+                onClick={handleExportExcel}
+                disabled={filteredItems.length === 0}
+                className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 text-sm shadow-xs"
+              >
+                <FileSpreadsheet size={16} />
+                Export Excel
+              </Button>
             </div>
           </div>
         </Card.Body>

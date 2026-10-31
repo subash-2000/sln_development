@@ -58,6 +58,8 @@ export const reportsApi = {
   },
 };
 
+export * from '../utils/excel-export';
+
 /**
  * Utility to download tabular report data as CSV
  * @param {Array<string>} headers - Header column titles

@@ -18,6 +18,7 @@ import StatusBadge from '../../../components/ui/StatusBadge';
 import Loader from '../../../components/common/Loader';
 import { useInvoiceReports } from '../hooks/use-reports';
 import { exportReportToCsv } from '../api/reports.api';
+import { exportInvoiceReportToExcel } from '../utils/excel-export';
 import InvoiceReportViewModal from '../components/InvoiceReportViewModal';
 
 const InvoiceReportPage = () => {
@@ -72,6 +73,15 @@ const InvoiceReportPage = () => {
     setDateTo('');
   };
 
+  const handleExportExcel = () => {
+    exportInvoiceReportToExcel(filteredItems, {
+      status: selectedStatus,
+      date_from: dateFrom,
+      date_to: dateTo,
+      search: searchTerm,
+    });
+  };
+
   const handleExportCsv = () => {
     const headers = [
       'Invoice Number',
@@ -111,19 +121,29 @@ const InvoiceReportPage = () => {
           { label: 'Reports', to: '/reports' },
           { label: 'Invoice Reports' },
         ]}
-      >
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            onClick={handleExportCsv}
-            disabled={filteredItems.length === 0}
-            className="flex items-center gap-2"
-          >
-            <Download size={16} />
-            Export CSV
-          </Button>
-        </div>
-      </PageHeader>
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              onClick={handleExportExcel}
+              disabled={filteredItems.length === 0}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-medium"
+            >
+              <FileSpreadsheet size={16} />
+              Export Excel (Sales Statement)
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleExportCsv}
+              disabled={filteredItems.length === 0}
+              className="flex items-center gap-2"
+            >
+              <Download size={16} />
+              Export CSV
+            </Button>
+          </div>
+        }
+      />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -185,7 +205,7 @@ const InvoiceReportPage = () => {
       {/* Filters Toolbar */}
       <Card>
         <Card.Body className="p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-center">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
               <input
@@ -237,6 +257,18 @@ const InvoiceReportPage = () => {
               >
                 <RotateCcw size={16} />
               </button>
+            </div>
+
+            <div>
+              <Button
+                variant="primary"
+                onClick={handleExportExcel}
+                disabled={filteredItems.length === 0}
+                className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 text-sm shadow-xs"
+              >
+                <FileSpreadsheet size={16} />
+                Export Excel
+              </Button>
             </div>
           </div>
         </Card.Body>

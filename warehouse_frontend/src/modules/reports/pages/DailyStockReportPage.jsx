@@ -3,12 +3,14 @@ import {
   Boxes, 
   Search, 
   Download, 
+  FileSpreadsheet,
   RotateCcw, 
   Eye, 
   Warehouse, 
   Layers, 
   CheckCircle2, 
-  AlertTriangle 
+  AlertTriangle,
+  Calendar
 } from 'lucide-react';
 import PageHeader from '../../../components/common/PageHeader';
 import Card from '../../../components/ui/Card';
@@ -16,6 +18,7 @@ import Button from '../../../components/ui/Button';
 import Loader from '../../../components/common/Loader';
 import { useDailyStockReports } from '../hooks/use-reports';
 import { exportReportToCsv } from '../api/reports.api';
+import { exportDailyStockReportToExcel } from '../utils/excel-export';
 import DailyStockReportViewModal from '../components/DailyStockReportViewModal';
 
 const DailyStockReportPage = () => {
@@ -23,6 +26,7 @@ const DailyStockReportPage = () => {
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [stockFilter, setStockFilter] = useState('ALL'); // ALL, AVAILABLE_ONLY, LOW_STOCK
+  const [period, setPeriod] = useState('DAILY'); // DAILY, WEEKLY, MONTHLY, YEARLY
   const [viewItem, setViewItem] = useState(null);
 
   const queryParams = useMemo(() => {
@@ -73,6 +77,16 @@ const DailyStockReportPage = () => {
     setStockFilter('ALL');
   };
 
+  const handleExportExcel = () => {
+    exportDailyStockReportToExcel(filteredItems, {
+      period,
+      warehouse_name: selectedWarehouse,
+      category_name: selectedCategory,
+      stock_filter: stockFilter,
+      search: searchTerm,
+    });
+  };
+
   const handleExportCsv = () => {
     const headers = [
       'Product SKU',
@@ -114,19 +128,29 @@ const DailyStockReportPage = () => {
           { label: 'Reports', to: '/reports' },
           { label: 'Daily Stock Reports' },
         ]}
-      >
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            onClick={handleExportCsv}
-            disabled={filteredItems.length === 0}
-            className="flex items-center gap-2"
-          >
-            <Download size={16} />
-            Export CSV
-          </Button>
-        </div>
-      </PageHeader>
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              onClick={handleExportExcel}
+              disabled={filteredItems.length === 0}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-medium"
+            >
+              <FileSpreadsheet size={16} />
+              Export Excel (Summary Sheet)
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleExportCsv}
+              disabled={filteredItems.length === 0}
+              className="flex items-center gap-2"
+            >
+              <Download size={16} />
+              Export CSV
+            </Button>
+          </div>
+        }
+      />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -177,6 +201,35 @@ const DailyStockReportPage = () => {
             </div>
           </div>
         </Card>
+      </div>
+
+      {/* Period Selection Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-xl border border-gray-200 shadow-xs">
+        <div className="flex items-center gap-2">
+          <Calendar size={18} className="text-gray-500" />
+          <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">Analysis Period:</span>
+        </div>
+        <div className="flex items-center gap-1.5 p-1 bg-gray-100 rounded-lg">
+          {[
+            { id: 'DAILY', label: 'Daily (Day-wise)' },
+            { id: 'WEEKLY', label: 'Weekly Summary' },
+            { id: 'MONTHLY', label: 'Monthly' },
+            { id: 'YEARLY', label: 'Yearly' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setPeriod(tab.id)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                period === tab.id
+                  ? 'bg-white text-emerald-700 shadow-xs font-semibold'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Filters Toolbar */}
@@ -236,14 +289,23 @@ const DailyStockReportPage = () => {
               </select>
             </div>
 
-            <div className="flex items-center justify-end">
+            <div className="flex items-center gap-2">
               <Button
                 variant="secondary"
                 onClick={handleResetFilters}
-                className="flex items-center gap-1.5 w-full sm:w-auto justify-center"
+                className="flex items-center gap-1.5 shrink-0"
+                title="Reset Filters"
               >
                 <RotateCcw size={16} />
-                Reset Filters
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleExportExcel}
+                disabled={filteredItems.length === 0}
+                className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 text-sm shadow-xs"
+              >
+                <FileSpreadsheet size={16} />
+                Export Excel
               </Button>
             </div>
           </div>
