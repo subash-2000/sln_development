@@ -280,14 +280,13 @@ const RingsInwardCreatePage = () => {
   const productOptions = useMemo(() => {
     if (!vendorId) return [];
     const types = Array.isArray(supplierTypes) ? supplierTypes : [];
-    let list = [];
-    if (types.length) {
-      const seen = new Set();
-      list = types.flatMap((t) => {
-        const id = String(t.product_id);
-        if (seen.has(id)) return [];
+    const seen = new Set();
+    const list = [];
+    types.forEach((t) => {
+      const id = String(t.product_id);
+      if (id && !seen.has(id)) {
         seen.add(id);
-        return [{
+        list.push({
           id: t.product_id,
           sku: t.product_sku,
           name: t.product_name || t.product_sku,
@@ -295,12 +294,25 @@ const RingsInwardCreatePage = () => {
           net_weight: t.per_ring_weight,
           unit_rate: t.unit_rate,
           packing_ratio: t.packing_ratio,
-        }];
-      });
-    } else {
-      list = catalogData?.items || [];
-    }
-    return list.slice().sort((a, b) =>
+        });
+      }
+    });
+    (catalogData?.items || []).forEach((c) => {
+      const id = String(c.id);
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        list.push({
+          id: c.id,
+          sku: c.sku,
+          name: c.name || c.sku,
+          uom_id: c.uom_id,
+          net_weight: c.net_weight,
+          unit_rate: c.unit_rate || c.standard_cost,
+          packing_ratio: c.packing_ratio,
+        });
+      }
+    });
+    return list.sort((a, b) =>
       (a.sku || a.name || '').localeCompare(b.sku || b.name || '', undefined, { numeric: true, sensitivity: 'base' })
     );
   }, [vendorId, supplierTypes, catalogData]);
@@ -322,6 +334,8 @@ const RingsInwardCreatePage = () => {
     const allowed = new Set(productOptions.map((p) => String(p.id)));
     (getValues('lines') || []).forEach((line, index) => {
       if (line?.product_id && !allowed.has(String(line.product_id))) {
+        const isFromParsed = parsedData?.items?.some((it) => String(it.product_id) === String(line.product_id));
+        if (isFromParsed) return;
         setValue(`lines.${index}.product_id`, '');
         setValue(`lines.${index}.per_ring_weight`, '');
       }

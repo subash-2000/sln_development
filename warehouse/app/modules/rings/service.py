@@ -183,10 +183,9 @@ class RingsService:
                 RingsSupplierType.vendor_id == vendor_id,
                 RingsSupplierType.is_active.is_(True),
             )
-            .order_by(RingsSupplierType.supplier_type.asc())
         )
         rows = (await self.db.execute(stmt)).scalars().all()
-        rows = sorted(rows, key=lambda row: ((row.product.sku if row.product and row.product.sku else (row.supplier_type or "")).lower()))
+        rows = sorted(rows, key=lambda row: (row.product.sku.lower() if row.product and row.product.sku else ""))
         return [_serialize_supplier_type(row) for row in rows]
 
     async def _get_vendor(self, vendor_id: uuid.UUID, company_id: uuid.UUID) -> Vendor:

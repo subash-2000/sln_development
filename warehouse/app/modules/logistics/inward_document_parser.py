@@ -164,7 +164,31 @@ def _is_field_label(value: str) -> bool:
     v = _norm_space(value).lower().rstrip(".")
     if v in _FIELD_LABELS:
         return True
-    return v.startswith("motor vehicle") or v.startswith("bill of lading")
+    compact = re.sub(r"[\s/._-]+", "", v)
+    if compact in {
+        "destination",
+        "dispatchedthrough",
+        "motorvehicleno",
+        "motorvehicle",
+        "vehicleno",
+        "billofladinglrno",
+        "billoflading",
+        "referenceno&date",
+        "referencenodate",
+        "referenceno",
+        "otherreferences",
+        "challanno",
+        "deliverychallan",
+        "lrno",
+        "lrgrno",
+        "dated",
+        "dispatchdocno",
+        "buyersorderno",
+        "dispatchto",
+        "party",
+    }:
+        return True
+    return v.startswith("motor vehicle") or v.startswith("bill of lading") or v.startswith("motorvehicle")
 
 
 def _clean_capture(value: str | None) -> str | None:
@@ -183,7 +207,7 @@ _ADDRESS_HINT = re.compile(
     r")\b|^\d+[-,/]"
 )
 _TRANSPORT_HINT = re.compile(
-    r"(?i)\b(transport|road\s*lines|roadlines|logistics|carriers|courier|parcels)\b"
+    r"(?i)(?:\b\w*(?:transport|road\s*lines|roadlines|logistics|carriers|courier|parcels)\b)"
 )
 _VEHICLE_PLATE = re.compile(
     r"\b([A-Z]{2}\s*\d{1,2}\s*[A-Z]{1,3}\s*\d{3,4})\b",
@@ -198,6 +222,8 @@ def _is_address_like(value: str) -> bool:
     if _VEHICLE_PLATE.search(v):
         return False
     if _TRANSPORT_HINT.search(v):
+        return False
+    if re.search(r"\b\d{1,2}[:.]\d{2}\b", v) and re.search(r"\d{2}[-/]\d{2}[-/]\d{2,4}", v):
         return False
     return bool(_ADDRESS_HINT.search(v))
 
@@ -280,7 +306,7 @@ def _parse_reference_tail(tail: str) -> tuple[str | None, date | None]:
     lines = [_norm_space(ln) for ln in tail.splitlines() if _norm_space(ln)][:12]
     chunk = " ".join(lines)
     inline = re.search(
-        r"(\d{2,6})\s+DT\.?\s*"
+        r"(\d{2,6})\s*DT\.?\s*"
         r"(\d{2}[-/][A-Za-z]+[-/]\d{2,4}|\d{2}[-/]\d{2}[-/]\d{2,4})",
         chunk,
         re.I,
@@ -290,7 +316,7 @@ def _parse_reference_tail(tail: str) -> tuple[str | None, date | None]:
     ref_no: str | None = None
     ref_date: date | None = None
     for line in lines:
-        if _is_field_label(line) or re.search(r"(?i)^(challan|dispatched|motor\s+vehicle|bill\s+of)", line):
+        if _is_field_label(line) or re.search(r"(?i)^(challan|dispatched|motor\s*vehicle|bill\s*of)", line):
             if ref_no or ref_date:
                 break
             continue
@@ -309,7 +335,7 @@ def _parse_reference_tail(tail: str) -> tuple[str | None, date | None]:
 
 
 def _parse_reference_no_date(text: str) -> tuple[str | None, date | None]:
-    m = re.search(r"(?i)reference\s+no\.?\s*&?\s*date", text)
+    m = re.search(r"(?i)reference\s*no\.?\s*&?\s*date", text)
     if not m:
         return None, None
     return _parse_reference_tail(text[m.end() : m.end() + 400])
@@ -317,7 +343,7 @@ def _parse_reference_no_date(text: str) -> tuple[str | None, date | None]:
 
 def _iter_reference_pairs(text: str) -> list[tuple[str | None, date | None]]:
     pairs: list[tuple[str | None, date | None]] = []
-    for m in re.finditer(r"(?i)reference\s+no\.?\s*&?\s*date", text):
+    for m in re.finditer(r"(?i)reference\s*no\.?\s*&?\s*date", text):
         pairs.append(_parse_reference_tail(text[m.end() : m.end() + 400]))
     return pairs
 
@@ -482,7 +508,11 @@ def _finalize_logistics(out: dict[str, Any]) -> dict[str, Any]:
         out["transporter_name"] = None
     if out.get("vehicle_number") and _is_address_like(out["vehicle_number"]):
         out["vehicle_number"] = None
-    if out.get("destination") and _is_address_like(out["destination"]):
+    if out.get("destination") and re.search(
+        r"\b(road\s*no|plot\s*no|sy\s*no|cross|industrial\s*area)\b",
+        str(out["destination"]),
+        re.I,
+    ):
         out["destination"] = None
     return out
 
@@ -519,10 +549,14 @@ def _scan_dispatch_candidates(block: str) -> dict[str, Any]:
         if _TRANSPORT_HINT.search(raw) and not _is_address_like(raw):
             out["transporter_name"] = _clean_capture(raw)
             continue
-        if re.search(r"(?i)^(SP|SHRI|SHREE|PARTAP|VRL|GATI)\b", raw) and not _is_address_like(raw):
+        if (
+            re.search(r"(?i)^(?:SP|SHRI|SHREE|PARTAP|VRL|GATI)", raw)
+            and not _is_address_like(raw)
+            and not re.search(r"(?i)\b(?:sln|warehousing|godown)\b", raw)
+        ):
             out["transporter_name"] = _clean_capture(raw)
             continue
-        if re.search(r"(?i)\b(bangalore|bengaluru|banglore)\b", raw):
+        if re.search(r"(?i)\b(bangalore|bengaluru|banglore|jaipur|delhi|mumbai|chennai|hyderabad)\b", raw):
             out["destination"] = _clean_capture(raw)
     return out
 
@@ -539,10 +573,10 @@ def _parse_dispatch_logistics(text: str) -> dict[str, Any]:
     }
     lines = [_norm_space(ln) for ln in block.splitlines() if _norm_space(ln)]
     label_specs: list[tuple[str, re.Pattern[str]]] = [
-        ("transporter_name", re.compile(r"^dispatched\s+through$", re.I)),
+        ("transporter_name", re.compile(r"^dispatched\s*through$", re.I)),
         ("destination", re.compile(r"^destination$", re.I)),
-        ("vehicle_number", re.compile(r"^motor\s+vehicle\s*no\.?$", re.I)),
-        ("lr_number", re.compile(r"^bill\s+of\s+lading", re.I)),
+        ("vehicle_number", re.compile(r"^(?:motor\s*)?vehicle\s*no\.?$", re.I)),
+        ("lr_number", re.compile(r"^(?:bill\s*of\s*lading|lr\s*no)", re.I)),
     ]
     label_keys: list[str] = []
     label_indices: list[int] = []
@@ -584,10 +618,19 @@ def _parse_dispatch_logistics(text: str) -> dict[str, Any]:
             if _TRANSPORT_HINT.search(raw) and not _is_address_like(raw):
                 assigned.setdefault("transporter_name", raw)
                 continue
-            if _is_address_like(raw):
-                assigned.setdefault("destination", raw)
+            if re.search(r"(?i)\b(bangalore|bengaluru|banglore|jaipur|delhi|mumbai|chennai|hyderabad)\b", raw):
+                assigned.setdefault("destination", _clean_capture(raw))
                 continue
-            if "transporter_name" not in assigned and not _is_date_only_token(raw):
+            if (
+                "transporter_name" not in assigned
+                and not _is_date_only_token(raw)
+                and not _is_address_like(raw)
+                and not re.search(r"(?i)\b(?:sln|warehousing|godown|party|gstin|state|code)\b", raw)
+                and (
+                    _TRANSPORT_HINT.search(raw)
+                    or re.search(r"(?i)^(?:SP|SHRI|SHREE|PARTAP|VRL|GATI)", raw)
+                )
+            ):
                 assigned["transporter_name"] = raw
         if assigned.get("transporter_name"):
             out["transporter_name"] = _clean_capture(assigned["transporter_name"])
@@ -603,7 +646,10 @@ def _parse_dispatch_logistics(text: str) -> dict[str, Any]:
 
     scanned = _scan_dispatch_candidates(block)
     for key in out:
-        if out.get(key):
+        if out.get(key) and not (
+            key == "transporter_name"
+            and re.search(r"(?i)\b(?:sln|warehousing|godown)\b", str(out.get(key)))
+        ):
             continue
         val = scanned.get(key)
         if val:
@@ -918,15 +964,32 @@ def _split_delivery_challan_sections(text: str) -> list[str]:
 
 def _parse_delivery_challan_section(section: str) -> ParsedLineItem | None:
     desc_m = re.search(
-        r"Description of Goods\s*([\d\w][\d\w\s]*(?:OR|IR)\s*Poyo)",
+        r"Description\s*(?:of)?\s*Goods[^\S\n]+([\d\w][\d\w\s]*(?:OR|IR)\s*Poyo)",
         section,
         re.I,
     )
     if not desc_m:
-        desc_m = re.search(r"Description of Goods\s*([^\n]+)", section, re.I)
+        desc_m = re.search(r"Description\s*(?:of)?\s*Goods[^\S\n]+([^\n]+)", section, re.I)
     if not desc_m:
         return None
     description = _norm_space(desc_m.group(1))
+    if _is_field_label(description):
+        return None
+    if description.lower() in {
+        "quantity",
+        "qty",
+        "hsn",
+        "hsn/sac",
+        "rate",
+        "rate/pc",
+        "amount",
+        "amount(in rs)",
+        "sr no",
+        "srno",
+        "description",
+        "description of goods",
+    }:
+        return None
     heat_m = re.search(r"Heat\s*No\.?\s*:?\s*(\d+)", section, re.I)
     packing = parse_packing_details(section)
     qty = packing.get("quantity")
@@ -960,12 +1023,92 @@ def _parse_delivery_challan_section(section: str) -> ParsedLineItem | None:
     return item
 
 
-def _parse_delivery_challan_document(text: str) -> InwardDocumentParseResult:
+def _parse_delivery_challan_table(text: str) -> list[ParsedLineItem]:
     items: list[ParsedLineItem] = []
-    for section in _split_delivery_challan_sections(text):
-        item = _parse_delivery_challan_section(section)
-        if item:
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+    start_idx = -1
+    end_idx = len(lines)
+    for i, ln in enumerate(lines):
+        if re.search(r"Description\s*(?:of)?\s*Goods", ln, re.I) or re.search(r"^\s*Sr\s*No\.?\s*$", ln, re.I):
+            start_idx = i
+            break
+
+    for i, ln in enumerate(lines):
+        if i > start_idx > -1 and re.search(r"^\s*Total\b", ln, re.I):
+            end_idx = i
+            break
+
+    table_lines = lines[start_idx + 1 : end_idx] if start_idx != -1 else lines
+    header_patterns = [
+        r"^(?:Sr\.?\s*No|Description|Quantity|HSN|Rate|Amount|\(in\s*pc)",
+    ]
+
+    for i, ln in enumerate(table_lines):
+        hsn_m = re.match(r"^(\d{6,8})$", ln)
+        if not hsn_m:
+            continue
+        hsn = hsn_m.group(1)
+
+        desc_candidates = []
+        for prev in reversed(table_lines[:i]):
+            if any(re.search(p, prev, re.I) for p in header_patterns):
+                continue
+            if re.match(r"^\d+\.?$", prev):
+                continue
+            desc_candidates.append(prev)
+            if len(desc_candidates) >= 1:
+                break
+
+        if not desc_candidates:
+            continue
+        description = desc_candidates[0]
+
+        post_lines = table_lines[i + 1 : min(len(table_lines), i + 12)]
+        post_text = " ".join(post_lines)
+
+        rate = None
+        qty = None
+        for post_ln in post_lines:
+            if re.match(r"^\d+\.\d{2}$", post_ln) and rate is None:
+                rate = _to_number(post_ln)
+            elif re.match(r"^\d{2,7}(?:\.0+)?$", post_ln) and qty is None:
+                qty = _to_number(post_ln)
+
+        packing = parse_packing_details("\n".join(post_lines))
+        if packing.get("quantity"):
+            qty = packing["quantity"]
+
+        heat_m = re.search(r"Heat\s*No\.?\s*:?\s*(\w+)", post_text, re.I)
+        lot_number = heat_m.group(1) if heat_m else None
+
+        if qty:
+            item = ParsedLineItem(
+                description=description,
+                quantity=float(qty),
+                sku_guess=_sku_from_description(description),
+                hsn=hsn,
+                rate=rate,
+                uom="PCS",
+                lot_number=lot_number,
+                packing_ratio=packing.get("packing_ratio"),
+                packing_detail=packing.get("packing_detail"),
+                box_count=packing.get("box_count"),
+                qty_per_box=packing.get("qty_per_box"),
+                package_count=packing.get("pack_count") or packing.get("box_count"),
+            )
+            _apply_item_logistics(item, post_text)
             items.append(item)
+    return items
+
+
+def _parse_delivery_challan_document(text: str) -> InwardDocumentParseResult:
+    items: list[ParsedLineItem] = _parse_delivery_challan_table(text)
+    if not items:
+        for section in _split_delivery_challan_sections(text):
+            item = _parse_delivery_challan_section(section)
+            if item:
+                items.append(item)
     if not items:
         single = _parse_delivery_challan_section(text)
         if single:
@@ -1010,59 +1153,7 @@ def _parse_delivery_challan_document(text: str) -> InwardDocumentParseResult:
 
 
 def _parse_aashita(text: str) -> InwardDocumentParseResult:
-    flat = text.replace("\n", " ")
-    challan = re.search(r"DC(\d{6,})", text, re.I)
-    ref = re.search(r"0542\s*DT\.?\s*26-Aug-26", text, re.I)
-    gstin = re.search(r"08AAZPG5776C1Z7", text, re.I)
-    transporter = re.search(r"SP\s*Road\s*lines", text, re.I)
-    vehicle = re.search(r"RJ14\s*GQ\s*9708", text, re.I)
-    lr = re.search(r"13158\s*dt\.?\s*26-08-2026", text, re.I)
-    heat = re.search(r"Heat\s*No\.?:?\s*(\d+)", text, re.I)
-    desc = re.search(r"2697\s*OR\s*Poyo", text, re.I)
-    packing = parse_packing_details(text)
-    qty = packing.get("quantity") or (3000.0 if re.search(r"\b3000\b", text) else None)
-    rate = re.search(r"\b19\.14\b", text)
-    hsn = re.search(r"\b84829900\b", text)
-
-    items: list[ParsedLineItem] = []
-    if desc and qty:
-        description = _norm_space(desc.group(0))
-        items.append(
-            ParsedLineItem(
-                description=description,
-                quantity=float(qty),
-                sku_guess=_sku_from_description(description),
-                hsn=hsn.group(0) if hsn else None,
-                rate=float(rate.group(0)) if rate else None,
-                uom="PCS",
-                lot_number=heat.group(1) if heat else None,
-                packing_ratio=packing.get("packing_ratio"),
-                packing_detail=packing.get("packing_detail"),
-                box_count=packing.get("box_count"),
-                qty_per_box=packing.get("qty_per_box"),
-                package_count=packing.get("pack_count") or packing.get("box_count"),
-            )
-        )
-
-    result = InwardDocumentParseResult(
-        document_type="DELIVERY_CHALLAN",
-        supplier_key="AASHITA",
-        supplier_name="Aashita Enterprises",
-        supplier_gstin=gstin.group(0).upper() if gstin else "08AAZPG5776C1Z7",
-        reference_document_type="STOCK_TRANSFER",
-        reference_document_number=challan.group(0) if challan else (ref.group(0) if ref else None),
-        transaction_date=_parse_dmy("26-08-26"),
-        transporter_name=_norm_space(transporter.group(0)) if transporter else "SP Roadlines",
-        vehicle_number=_norm_space(vehicle.group(0)).replace(" ", "") if vehicle else "RJ14GQ9708",
-        lr_number=lr.group(0).split("dt")[0].strip() if lr else "13158",
-        destination="BANGALORE",
-        buyer_gstin="29AFRFS8378H1ZW",
-        total_amount=57420.0,
-        items=items,
-        raw_ocr_text=text,
-    )
-    _apply_packing(text, items)
-    return _finish_result(result, text)
+    return _parse_delivery_challan_document(text)
 
 
 def _parse_manu(text: str) -> InwardDocumentParseResult:
