@@ -5,7 +5,7 @@ import { useAuthStore } from '../../../store/auth.store';
 import { useCreateProduct } from '../hooks/use-products';
 import { useCompanies } from '../../companies/hooks/use-companies';
 import ProductForm from '../components/ProductForm';
-import Breadcrumb from '../../../components/navigation/Breadcrumb';
+import PageHeader from '../../../components/common/PageHeader';
 
 const ProductCreatePage = () => {
   const navigate = useNavigate();
@@ -57,8 +57,10 @@ const ProductCreatePage = () => {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb
-        items={[
+      <PageHeader
+        title="Add Product"
+        description="Create a new SKU with tracking configurations and supplier mappings."
+        breadcrumbs={[
           { label: 'Dashboard', to: '/dashboard' },
           { label: 'Masters' },
           { label: 'Products', to: '/products' },

@@ -40,6 +40,16 @@ export const useUpdateProduct = () => {
   });
 };
 
+export const useDeleteProduct = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => productsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+};
+
 export const useCategories = () => {
   return useQuery({
     queryKey: ['categories'],

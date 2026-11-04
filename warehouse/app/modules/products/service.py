@@ -520,6 +520,81 @@ class ProductService:
         vendor_map = await self._vendor_links_map([product_id])
         return self._to_response(full_product, vendor_map.get(product_id, ([], [])))
 
+    async def delete_product(self, product_id: uuid.UUID) -> dict:
+        product = await self.repo.get_by_id(product_id)
+        if not product:
+            raise NotFoundException(
+                f"Product '{product_id}' not found",
+                error_code="PRODUCT_NOT_FOUND",
+            )
+
+        # Check if product has active inventory stock on hand or reserved
+        from app.models.inventory import StockQuant
+        quant_stmt = select(StockQuant).where(
+            StockQuant.product_id == product_id,
+            (StockQuant.quantity_on_hand > 0) | (StockQuant.quantity_reserved > 0),
+        )
+        quant_res = await self.db.execute(quant_stmt)
+        if quant_res.scalars().first():
+            raise ConflictException(
+                f"Cannot delete product '{product.name}' ({product.sku}) because it has active stock on hand or reserved. Please adjust stock to 0 first or deactivate the product.",
+                error_code="PRODUCT_HAS_ACTIVE_STOCK",
+            )
+
+        # Remove supplier mappings
+        await self.db.execute(
+            delete(RingsSupplierType).where(RingsSupplierType.product_id == product_id)
+        )
+
+        # Check for historical transactions (e.g. StockMove)
+        from app.models.inventory import StockMove
+        move_stmt = select(StockMove.id).where(StockMove.product_id == product_id).limit(1)
+        move_res = await self.db.execute(move_stmt)
+        has_history = move_res.scalar_one_or_none() is not None
+
+        if has_history:
+            # Soft-delete if historical transactions exist
+            product.status = EntityStatus.INACTIVE.value
+            await log_audit(
+                db=self.db,
+                action="DEACTIVATE",
+                module="products",
+                entity_name="Product",
+                entity_id=str(product.id),
+                company_id=product.company_id,
+                old_values={"sku": product.sku, "name": product.name, "status": "ACTIVE"},
+                new_values={"status": "INACTIVE"},
+            )
+            await self.db.commit()
+            return {
+                "deleted": True,
+                "soft_deleted": True,
+                "id": str(product_id),
+                "sku": product.sku,
+                "name": product.name,
+                "message": f"Product '{product.sku}' was deactivated because it has historical transaction records.",
+            }
+        else:
+            await self.repo.delete_product(product)
+            await log_audit(
+                db=self.db,
+                action="DELETE",
+                module="products",
+                entity_name="Product",
+                entity_id=str(product.id),
+                company_id=product.company_id,
+                old_values={"sku": product.sku, "name": product.name},
+            )
+            await self.db.commit()
+            return {
+                "deleted": True,
+                "soft_deleted": False,
+                "id": str(product_id),
+                "sku": product.sku,
+                "name": product.name,
+                "message": f"Product '{product.sku}' deleted successfully.",
+            }
+
     async def _vendor_links_map(
         self, product_ids: list[uuid.UUID]
     ) -> dict[uuid.UUID, tuple[list[uuid.UUID], list[str]]]:

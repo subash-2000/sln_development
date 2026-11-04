@@ -19,6 +19,11 @@ const fieldGridClass = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3';
 
 const ProductForm = ({ initialData, onSubmit, isLoading, isEdit = false }) => {
   const { companyContext } = useAuthStore();
+  const { data: companiesData } = useCompanies({ page_size: 100 });
+  const { data: categoriesData } = useCategories();
+  const { data: uomsData } = useUOMs();
+  const { data: vendorsData } = useVendors({ page_size: 200, status: 'ACTIVE' });
+
   const companies = useMemo(() => {
     return (companiesData?.items || []).slice().sort((a, b) =>
       (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' })

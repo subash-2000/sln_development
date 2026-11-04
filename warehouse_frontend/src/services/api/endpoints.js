@@ -65,6 +65,7 @@ export const ENDPOINTS = {
     DETAIL: (id) => `/products/${id}`,
     CREATE: '/products',
     UPDATE: (id) => `/products/${id}`,
+    DELETE: (id) => `/products/${id}`,
     CATEGORIES: {
       LIST: '/product-categories',
       DETAIL: (id) => `/product-categories/${id}`,

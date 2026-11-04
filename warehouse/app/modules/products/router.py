@@ -298,3 +298,19 @@ async def update_product(
     service = ProductService(db)
     updated = await service.update_product(product_id, request)
     return success_response(data=updated.model_dump(), message="Product updated successfully")
+
+
+@router.delete(
+    "/products/{product_id}",
+    response_model=StandardResponse[dict],
+    status_code=status.HTTP_200_OK,
+    summary="Delete Product",
+)
+async def delete_product(
+    product_id: uuid.UUID,
+    current_user: User = Depends(require_permission("master.product.write")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = ProductService(db)
+    res = await service.delete_product(product_id)
+    return success_response(data=res, message=res.get("message", "Product deleted successfully"))

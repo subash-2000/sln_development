@@ -1,16 +1,20 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Edit2, Trash2, AlertCircle } from 'lucide-react';
 import { useListState } from '../../../hooks/use-list-state';
-import { useProducts, useUpdateProduct } from '../hooks/use-products';
+import { useProducts, useUpdateProduct, useDeleteProduct } from '../hooks/use-products';
 import { useImport, useExport } from '../../../hooks/use-migration';
 import ListPage from '../../../components/tables/ListPage';
 import RowActions from '../../../components/tables/RowActions';
+import ConfirmDialog from '../../../components/modals/ConfirmDialog';
 import { isEntityActive } from '../../../constants/status';
 import ImportModal from '../../../components/tables/ImportModal';
 
 const ProductListPage = () => {
   const navigate = useNavigate();
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [productToDelete, setProductToDelete] = useState(null);
+  const [actionError, setActionError] = useState(null);
   
   const initialColumns = [
     { key: 'sku', label: 'SKU', sortable: true, widthClass: 'w-32' },
@@ -42,6 +46,7 @@ const ProductListPage = () => {
 
   const { data, isLoading, isFetching, error, refetch } = useProducts(list.params);
   const { mutateAsync: updateProduct } = useUpdateProduct();
+  const { mutateAsync: deleteProduct, isPending: isDeleting } = useDeleteProduct();
   const { mutate: doExport } = useExport();
   const { mutate: doImport, isPending: isImporting } = useImport();
 
@@ -59,6 +64,20 @@ const ProductListPage = () => {
       refetch();
     } catch (err) {
       console.error(`Failed to ${isCurrentlyActive ? 'deactivate' : 'activate'} product:`, err);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!productToDelete) return;
+    setActionError(null);
+    try {
+      await deleteProduct(productToDelete.id);
+      setProductToDelete(null);
+      refetch();
+    } catch (err) {
+      console.error('Failed to delete product:', err);
+      const msg = err?.response?.data?.detail || err?.message || 'Failed to delete product.';
+      setActionError(typeof msg === 'string' ? msg : JSON.stringify(msg));
     }
   };
 
@@ -83,30 +102,75 @@ const ProductListPage = () => {
   const renderRowActions = (product) => {
     const isActive = isEntityActive(product);
     return (
-      <RowActions
-        actions={[
-          { type: 'view', label: 'View Details', onClick: () => navigate(`/products/${product.id}`) },
-          { type: 'edit', label: 'Edit Product', onClick: () => navigate(`/products/${product.id}/edit`) },
-          {
-            type: 'deactivate',
-            label: 'Deactivate',
-            onClick: () => handleToggleStatus(product),
-            hidden: !isActive,
-          },
-          {
-            type: 'activate',
-            label: 'Activate',
-            onClick: () => handleToggleStatus(product),
-            hidden: isActive,
-          },
-          { type: 'delete', label: 'Delete', onClick: () => console.log('Delete', product.id), variant: 'danger' },
-        ]}
-      />
+      <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          onClick={() => navigate(`/products/${product.id}/edit`)}
+          title="Edit Product"
+          className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+        >
+          <Edit2 size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActionError(null);
+            setProductToDelete(product);
+          }}
+          title="Delete Product"
+          className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+        >
+          <Trash2 size={16} />
+        </button>
+        <RowActions
+          actions={[
+            { type: 'view', label: 'View Details', onClick: () => navigate(`/products/${product.id}`) },
+            { type: 'edit', label: 'Edit Product', onClick: () => navigate(`/products/${product.id}/edit`) },
+            {
+              type: 'deactivate',
+              label: 'Deactivate',
+              onClick: () => handleToggleStatus(product),
+              hidden: !isActive,
+            },
+            {
+              type: 'activate',
+              label: 'Activate',
+              onClick: () => handleToggleStatus(product),
+              hidden: isActive,
+            },
+            {
+              type: 'delete',
+              label: 'Delete',
+              onClick: () => {
+                setActionError(null);
+                setProductToDelete(product);
+              },
+              variant: 'danger',
+            },
+          ]}
+        />
+      </div>
     );
   };
 
   return (
     <>
+      {actionError && (
+        <div className="mb-4 flex items-center justify-between gap-3 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 text-red-500" />
+            <span>{actionError}</span>
+          </div>
+          <button 
+            type="button" 
+            onClick={() => setActionError(null)}
+            className="text-xs font-semibold text-red-600 hover:underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       <ListPage
         title="Products"
         description="Manage product master data, SKUs, categories and UOMs."
@@ -179,6 +243,23 @@ const ProductListPage = () => {
           { key: 'status', label: 'Status' },
         ]}
         sampleUrl="PRODUCT"
+      />
+
+      <ConfirmDialog
+        open={!!productToDelete}
+        title="Delete Product"
+        description={
+          productToDelete
+            ? `Are you sure you want to delete product "${productToDelete.sku} - ${productToDelete.name}"? If historical stock records exist, it will be safely deactivated instead.`
+            : ''
+        }
+        confirmLabel="Delete"
+        variant="danger"
+        isLoading={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onClose={() => {
+          if (!isDeleting) setProductToDelete(null);
+        }}
       />
     </>
   );
