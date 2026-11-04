@@ -20,6 +20,7 @@ const ProductEditPage = () => {
         id,
         data: {
           ...data,
+          sku: data.sku ? data.sku.trim() : undefined,
           category_id: data.category_id ? data.category_id : null,
           secondary_uom_id: data.secondary_uom_id ? data.secondary_uom_id : null,
           hsn_code: data.hsn_code ? data.hsn_code.trim() : null,

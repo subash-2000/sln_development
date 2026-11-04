@@ -29,7 +29,7 @@ const ProductCreatePage = () => {
         part_number: data.part_number?.trim() || null,
         description: data.description ? data.description.trim() : null,
         barcode: data.barcode ? data.barcode.trim() : null,
-        sku: data.sku ? data.sku.trim().toUpperCase() : '',
+        sku: data.sku ? data.sku.trim() : '',
         name: data.name ? data.name.trim() : '',
         batch_number: data.batch_number?.trim() || null,
         heat_number: data.heat_number?.trim() || null,

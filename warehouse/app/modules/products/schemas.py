@@ -139,6 +139,7 @@ class ProductCreateRequest(BaseModel):
     )
 
     @field_validator(
+        "sku",
         "category_id",
         "secondary_uom_id",
         "weight_uom_id",
@@ -164,6 +165,7 @@ class ProductCreateRequest(BaseModel):
 
 
 class ProductUpdateRequest(BaseModel):
+    sku: str | None = Field(None, min_length=2, max_length=100)
     name: str | None = Field(None, min_length=2, max_length=255)
     description: str | None = None
     part_number: str | None = Field(None, max_length=100)
@@ -196,6 +198,7 @@ class ProductUpdateRequest(BaseModel):
     )
 
     @field_validator(
+        "sku",
         "category_id",
         "secondary_uom_id",
         "tax_id",

@@ -334,7 +334,7 @@ class ProductService:
             )
 
         # 2. Check unique SKU
-        clean_sku = req.sku.strip().upper()
+        clean_sku = req.sku.strip()
         if await self.repo.get_by_sku(req.company_id, clean_sku):
             raise ConflictException(
                 f"Product SKU '{clean_sku}' already exists in Company", error_code="SKU_EXISTS"
@@ -436,7 +436,18 @@ class ProductService:
                 f"Product with ID '{product_id}' not found", error_code="PRODUCT_NOT_FOUND"
             )
 
-        old_values = {"name": product.name, "hsn_code": product.hsn_code, "status": product.status}
+        old_values = {"sku": product.sku, "name": product.name, "hsn_code": product.hsn_code, "status": product.status}
+
+        if req.sku is not None:
+            clean_sku = req.sku.strip()
+            if clean_sku.upper() != product.sku.upper():
+                existing = await self.repo.get_by_sku(product.company_id, clean_sku)
+                if existing and existing.id != product.id:
+                    raise ConflictException(
+                        f"Product SKU '{clean_sku}' already exists in Company",
+                        error_code="SKU_EXISTS",
+                    )
+            product.sku = clean_sku
 
         if req.name is not None:
             product.name = req.name.strip()
@@ -511,7 +522,7 @@ class ProductService:
             entity_id=str(product.id),
             company_id=product.company_id,
             old_values=old_values,
-            new_values={"name": product.name, "status": product.status},
+            new_values={"sku": product.sku, "name": product.name, "status": product.status},
         )
         await self.db.commit()
         self.db.expunge_all()

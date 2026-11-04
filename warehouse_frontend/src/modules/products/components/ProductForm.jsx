@@ -163,7 +163,6 @@ const ProductForm = ({ initialData, onSubmit, isLoading, isEdit = false }) => {
               isRequired
               className={compactInputClass}
               {...register('sku')}
-              disabled={isEdit}
             />
             <Input
               label="Product Name"

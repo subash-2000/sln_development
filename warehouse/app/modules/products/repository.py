@@ -203,7 +203,8 @@ class ProductRepository:
 
     async def get_by_sku(self, company_id: uuid.UUID, sku: str) -> Product | None:
         stmt = select(Product).where(
-            Product.company_id == company_id, Product.sku == sku.strip().upper()
+            Product.company_id == company_id,
+            func.upper(Product.sku) == sku.strip().upper(),
         )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
