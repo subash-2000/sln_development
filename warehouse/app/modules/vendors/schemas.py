@@ -26,6 +26,11 @@ class VendorCreateRequest(BaseModel):
         max_length=30,
         description="'STANDARD', 'JOB_WORK', 'DIRECT_INVOICE', 'BOTH'",
     )
+    packaging_type: str = Field(
+        "C_BOX",
+        max_length=20,
+        description="'PALLET' or 'C_BOX'",
+    )
     gstin: str | None = Field(None, description="15-character GSTIN")
     pan: str | None = Field(None, min_length=10, max_length=10, description="10-character PAN")
     email: str | None = Field(None, max_length=255)
@@ -79,6 +84,7 @@ class VendorUpdateRequest(BaseModel):
     legal_name: str | None = Field(None, max_length=255)
     vendor_type: str | None = Field(None, max_length=50)
     invoice_workflow: str | None = Field(None, max_length=30)
+    packaging_type: str | None = Field(None, max_length=20)
     gstin: str | None = Field(None, description="15-character GSTIN")
     pan: str | None = Field(None, min_length=10, max_length=10)
     email: str | None = Field(None, max_length=255)
@@ -138,6 +144,7 @@ class VendorResponse(BaseModel):
     legal_name: str | None = None
     vendor_type: str
     invoice_workflow: str = "STANDARD"
+    packaging_type: str = "C_BOX"
     gstin: str | None = None
     pan: str | None = None
     email: str | None = None

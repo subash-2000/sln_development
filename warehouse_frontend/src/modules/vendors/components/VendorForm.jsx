@@ -18,9 +18,13 @@ const getInitialValues = (data) => {
       email: '',
       address: '',
       invoice_workflow: 'STANDARD',
+      packaging_type: 'C_BOX',
       is_active: true,
     };
   }
+  const defaultPkg = /AGRASEN|FALSAN|UNIQUE|AASHITA/i.test(`${data.code || ''} ${data.name || ''}`)
+    ? 'PALLET'
+    : 'C_BOX';
   return {
     code: data.code || '',
     name: data.name || '',
@@ -30,6 +34,7 @@ const getInitialValues = (data) => {
     email: data.email || '',
     address: data.address || data.billing_address || '',
     invoice_workflow: data.invoice_workflow || 'STANDARD',
+    packaging_type: data.packaging_type || defaultPkg,
     is_active:
       data.is_active !== undefined
         ? Boolean(data.is_active)
@@ -330,6 +335,23 @@ const VendorForm = ({ initialData, onSubmit, isLoading, isEdit = false }) => {
             </select>
             <p className="text-xs text-gray-500">
               Job Work never generates an SLN tax invoice. Direct Invoice records the supplier invoice only.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor="packaging_type" className="text-sm font-medium text-gray-700">
+              Inward Packaging Type
+            </label>
+            <select
+              id="packaging_type"
+              {...register('packaging_type')}
+              className="w-full bg-white border border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+            >
+              <option value="C_BOX">C/Boxes (Material received in Corrugated Boxes)</option>
+              <option value="PALLET">Pallets (Material received on Pallets)</option>
+            </select>
+            <p className="text-xs text-gray-500">
+              Captures inward material as Pallets (Agrasen, Falsan, Unique, Aashita) or C/Boxes (Deepesh, Pushp, Perfect, T Point).
             </p>
           </div>
 

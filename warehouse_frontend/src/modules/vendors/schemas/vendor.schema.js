@@ -93,6 +93,10 @@ export const getSupplierSchema = (isEdit = false, existingSuppliers = [], curren
       .enum(['STANDARD', 'JOB_WORK', 'DIRECT_INVOICE', 'BOTH'])
       .optional()
       .default('STANDARD'),
+    packaging_type: z
+      .enum(['PALLET', 'C_BOX'])
+      .optional()
+      .default('C_BOX'),
     is_active: z.boolean().default(true),
   });
 

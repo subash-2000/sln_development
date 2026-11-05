@@ -57,18 +57,27 @@ const resolveParsedRefNo = (line, challanNumber) => {
   return m ? m[1] : '';
 };
 
-const buildPackingDetail = (line) => {
+export const isPalletSupplier = (vendor) => {
+  if (!vendor) return false;
+  const pkg = String(vendor.packaging_type || '').toUpperCase();
+  if (pkg.includes('PALLET')) return true;
+  if (pkg.includes('BOX')) return false;
+  const blob = `${vendor.code || ''} ${vendor.name || ''}`.toUpperCase();
+  return /AGRASEN|FALSAN|UNIQUE|AASHITA/i.test(blob);
+};
+
+const buildPackingDetail = (line, isPallet = false) => {
   const ratio = String(line?.packing_ratio || '').trim();
   const boxes = Number(line?.box_count || 0);
   const perBox = Number(line?.qty_per_box || 0);
   const pallets = Number(line?.pallet_count || 0);
   const perPallet = Number(line?.qty_per_pallet || 0);
   const qty = packingQty(line) || Number(line?.quantity || 0);
-  if (ratio && boxes && perBox && !pallets) {
-    return `${perBox}x${boxes} = ${qty} (${ratio})`.slice(0, 100);
+  if (pallets && perPallet) {
+    return `${perPallet}x${pallets} = ${qty}${ratio ? ` (${ratio})` : ''}`.slice(0, 100);
   }
-  if (ratio && pallets && perPallet && !boxes) {
-    return `${perPallet}x${pallets} = ${qty} (${ratio})`.slice(0, 100);
+  if (boxes && perBox) {
+    return `${perBox}x${boxes} = ${qty}${ratio ? ` (${ratio})` : ''}`.slice(0, 100);
   }
   return ratio || undefined;
 };
@@ -274,8 +283,43 @@ const RingsInwardCreatePage = () => {
     { enabled: !!vendorId, placeholderData: null }
   );
   const vendor = useMemo(() => vendors.find((v) => v.id === vendorId), [vendors, vendorId]);
+  const isPalletMode = useMemo(() => isPalletSupplier(vendor), [vendor]);
   const workflowMaster = vendor?.invoice_workflow || 'STANDARD';
   const isDirect = (watch('workflow') || workflowMaster) === 'DIRECT_INVOICE';
+
+  const prevVendorRef = useRef(vendorId);
+  useEffect(() => {
+    if (prevVendorRef.current && prevVendorRef.current !== vendorId) {
+      const prevV = vendors.find((v) => v.id === prevVendorRef.current);
+      const wasPallet = isPalletSupplier(prevV);
+      const nowPallet = isPalletSupplier(vendor);
+      if (wasPallet !== nowPallet) {
+        const curLines = getValues('lines') || [];
+        curLines.forEach((l, idx) => {
+          if (nowPallet) {
+            const bCount = Number(l?.box_count || 0);
+            const bQty = Number(l?.qty_per_box || 0);
+            if (bCount > 0 || bQty > 0) {
+              setValue(`lines.${idx}.pallet_count`, bCount, { shouldDirty: true });
+              setValue(`lines.${idx}.qty_per_pallet`, bQty, { shouldDirty: true });
+              setValue(`lines.${idx}.box_count`, 0, { shouldDirty: true });
+              setValue(`lines.${idx}.qty_per_box`, 0, { shouldDirty: true });
+            }
+          } else {
+            const pCount = Number(l?.pallet_count || 0);
+            const pQty = Number(l?.qty_per_pallet || 0);
+            if (pCount > 0 || pQty > 0) {
+              setValue(`lines.${idx}.box_count`, pCount, { shouldDirty: true });
+              setValue(`lines.${idx}.qty_per_box`, pQty, { shouldDirty: true });
+              setValue(`lines.${idx}.pallet_count`, 0, { shouldDirty: true });
+              setValue(`lines.${idx}.qty_per_pallet`, 0, { shouldDirty: true });
+            }
+          }
+        });
+      }
+    }
+    prevVendorRef.current = vendorId;
+  }, [vendorId, vendor, vendors, getValues, setValue]);
 
   const productOptions = useMemo(() => {
     if (!vendorId) return [];
@@ -355,6 +399,17 @@ const RingsInwardCreatePage = () => {
     if (lastParseKeyRef.current === parseKey) return;
     lastParseKeyRef.current = parseKey;
 
+    const targetVendor =
+      vendors.find((v) => String(v.id) === String(parsedData.vendor_id)) ||
+      vendors.find(
+        (v) =>
+          (v.code && v.code === parsedData.supplier_key) ||
+          (v.name && parsedData.supplier_name && v.name.toLowerCase() === parsedData.supplier_name.toLowerCase())
+      );
+    const docIsPallet =
+      isPalletSupplier(targetVendor) ||
+      /AGRASEN|FALSAN|UNIQUE|AASHITA/i.test(`${parsedData.supplier_key || ''} ${parsedData.supplier_name || ''}`);
+
     const dateStr = parsedData.transaction_date
       ? String(parsedData.transaction_date).slice(0, 10)
       : getValues('supplier_document_date');
@@ -363,11 +418,39 @@ const RingsInwardCreatePage = () => {
           const productId = matchProduct(line, productOptions);
           const product = productOptions.find((p) => String(p.id) === String(productId));
           const qty = Number(line.quantity ?? 0);
-          const boxes = Number(line.box_count ?? line.package_count ?? 0);
-          let perBox = Number(line.qty_per_box ?? line.box_quantity ?? 0);
-          if (!perBox && boxes > 0 && qty > 0) perBox = qty / boxes;
-          const pallets = Number(line.pallet_count ?? 0);
-          const perPallet = Number(line.qty_per_pallet ?? 0);
+          const rawPkg = Number(line.package_count || 0);
+          const pCount = Number(line.pallet_count || 0);
+          const pQty = Number(line.qty_per_pallet || 0);
+          const bCount = Number(line.box_count || 0);
+          const bQty = Number(line.qty_per_box || line.box_quantity || 0);
+
+          let finalPallets = 0;
+          let finalQtyPerPallet = 0;
+          let finalBoxes = 0;
+          let finalQtyPerBox = 0;
+
+          if (docIsPallet) {
+            finalPallets = pCount || bCount || rawPkg;
+            finalQtyPerPallet = pQty || bQty;
+            if (!finalQtyPerPallet && finalPallets > 0 && qty > 0) {
+              finalQtyPerPallet = qty / finalPallets;
+            }
+          } else {
+            finalBoxes = bCount || pCount || rawPkg;
+            finalQtyPerBox = bQty || pQty;
+            if (!finalQtyPerBox && finalBoxes > 0 && qty > 0) {
+              finalQtyPerBox = qty / finalBoxes;
+            }
+          }
+
+          const calculatedQty =
+            qty ||
+            (finalPallets && finalQtyPerPallet
+              ? finalPallets * finalQtyPerPallet
+              : finalBoxes && finalQtyPerBox
+                ? finalBoxes * finalQtyPerBox
+                : 0);
+
           return {
             ...emptyLine(),
             product_id: productId,
@@ -375,11 +458,11 @@ const RingsInwardCreatePage = () => {
             packing_ratio: line.packing_ratio || product?.packing_ratio || '',
             has_remark: line.remarks ? 'yes' : 'no',
             remarks: line.remarks || '',
-            pallet_count: pallets,
-            qty_per_pallet: perPallet,
-            box_count: boxes,
-            qty_per_box: perBox,
-            quantity: qty || (boxes && perBox ? boxes * perBox : 0),
+            pallet_count: finalPallets,
+            qty_per_pallet: finalQtyPerPallet,
+            box_count: finalBoxes,
+            qty_per_box: finalQtyPerBox,
+            quantity: calculatedQty,
             short_quantity: '',
             unit_rate: line.rate ?? line.unit_rate ?? 0,
             per_ring_weight: product?.net_weight ?? '',
@@ -463,13 +546,37 @@ const RingsInwardCreatePage = () => {
   const recalcLineQty = (index, shortOverride) => {
     queueMicrotask(() => {
       const line = getValues(`lines.${index}`);
-      const packed = packingQty(line);
+      const pCount = Number(line?.pallet_count || 0);
+      const pQty = Number(line?.qty_per_pallet || 0);
+      const bCount = Number(line?.box_count || 0);
+      const bQty = Number(line?.qty_per_box || 0);
+      const packed = pCount * pQty + bCount * bQty;
       if (packed > 0) {
         const short =
           shortOverride !== undefined ? parseShortQty(shortOverride) : parseShortQty(line.short_quantity);
         setValue(`lines.${index}.quantity`, Math.max(0, packed - short), { shouldDirty: true });
       }
     });
+  };
+
+  const onPalletChange = (index) => {
+    const pCount = Number(getValues(`lines.${index}.pallet_count`) || 0);
+    const pQty = Number(getValues(`lines.${index}.qty_per_pallet`) || 0);
+    if (pCount > 0 || pQty > 0) {
+      setValue(`lines.${index}.box_count`, 0, { shouldDirty: true });
+      setValue(`lines.${index}.qty_per_box`, 0, { shouldDirty: true });
+    }
+    recalcLineQty(index);
+  };
+
+  const onBoxChange = (index) => {
+    const bCount = Number(getValues(`lines.${index}.box_count`) || 0);
+    const bQty = Number(getValues(`lines.${index}.qty_per_box`) || 0);
+    if (bCount > 0 || bQty > 0) {
+      setValue(`lines.${index}.pallet_count`, 0, { shouldDirty: true });
+      setValue(`lines.${index}.qty_per_pallet`, 0, { shouldDirty: true });
+    }
+    recalcLineQty(index);
   };
 
   const lineTotals = (watchedLines || []).map((row) => {
@@ -593,14 +700,15 @@ const RingsInwardCreatePage = () => {
             (t) => String(t.product_id) === String(line.product_id)
           );
           const quantity = lineNetQty(line);
+          const isPallet = isPalletMode || (Number(line.pallet_count || 0) > 0 && Number(line.box_count || 0) === 0);
           return {
             product_id: line.product_id,
             uom_id: product?.uom_id || catalog?.uom_id,
             heat_number: String(line.heat_number || '').trim() || undefined,
-            pallet_count: Number(line.pallet_count || 0),
-            qty_per_pallet: Number(line.qty_per_pallet || 0),
-            box_count: Number(line.box_count || 0),
-            qty_per_box: Number(line.qty_per_box || 0),
+            pallet_count: isPallet ? Number(line.pallet_count || 0) : 0,
+            qty_per_pallet: isPallet ? Number(line.qty_per_pallet || 0) : 0,
+            box_count: !isPallet ? Number(line.box_count || 0) : 0,
+            qty_per_box: !isPallet ? Number(line.qty_per_box || 0) : 0,
             quantity,
             short_quantity:
               line.short_quantity === '' || line.short_quantity == null
@@ -614,7 +722,7 @@ const RingsInwardCreatePage = () => {
             reference_number: String(line.reference_number || '').trim() || undefined,
             part_number: String(line.part_number || '').trim() || undefined,
             transporter_name: form.transporter_name || undefined,
-            packing_detail: buildPackingDetail(line),
+            packing_detail: buildPackingDetail(line, isPallet),
             remarks: line.has_remark === 'yes' && String(line.remarks || '').trim()
               ? String(line.remarks).trim()
               : undefined,
@@ -660,11 +768,27 @@ const RingsInwardCreatePage = () => {
               </select>
             </div>
             <div className="space-y-1">
-              <label htmlFor="vendor_id" className="text-xs font-medium text-gray-600">Supplier</label>
+              <div className="flex items-center justify-between">
+                <label htmlFor="vendor_id" className="text-xs font-medium text-gray-600">Supplier</label>
+                {vendor && (
+                  <span
+                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide ${
+                      isPalletMode
+                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                        : 'bg-amber-50 text-amber-700 border border-amber-200'
+                    }`}
+                    title={isPalletMode ? 'Pallet Supplier: AGRASEN, FALSAN, UNIQUE, AASHITA' : 'C/Box Supplier: DEEPESH, PUSHP, PERFECT, T POINT'}
+                  >
+                    Packaging: {isPalletMode ? 'Pallets' : 'C/Boxes'}
+                  </span>
+                )}
+              </div>
               <select id="vendor_id" {...register('vendor_id', { required: true })} className={lineSelectClass}>
                 <option value="">Select Supplier</option>
                 {vendors.map((v) => (
-                  <option key={v.id} value={v.id}>{v.name}</option>
+                  <option key={v.id} value={v.id}>
+                    {v.name} ({v.packaging_type === 'PALLET' || isPalletSupplier(v) ? 'Pallets' : 'C/Boxes'})
+                  </option>
                 ))}
               </select>
             </div>
@@ -733,10 +857,10 @@ const RingsInwardCreatePage = () => {
                       <th className={`${thBase} ${challanColClass}`}>Challan No</th>
                       <th className={`${thBase} w-[4.5rem]`}>Ref No</th>
                       <th className={thBase}>Ratio</th>
-                      <th className={thBase}>Pallets</th>
-                      <th className={thBase}>Qty / Pallet</th>
-                      <th className={thBase}>Boxes</th>
-                      <th className={thBase}>Qty / Box</th>
+                      <th className={`${thBase} ${isPalletMode ? 'bg-blue-50 text-blue-700 font-bold border-t border-l border-blue-200' : 'text-gray-400'}`}>Pallets</th>
+                      <th className={`${thBase} ${isPalletMode ? 'bg-blue-50 text-blue-700 font-bold border-t border-r border-blue-200' : 'text-gray-400'}`}>Qty / Pallet</th>
+                      <th className={`${thBase} ${!isPalletMode ? 'bg-amber-50 text-amber-700 font-bold border-t border-l border-amber-200' : 'text-gray-400'}`}>Boxes</th>
+                      <th className={`${thBase} ${!isPalletMode ? 'bg-amber-50 text-amber-700 font-bold border-t border-r border-amber-200' : 'text-gray-400'}`}>Qty / Box</th>
                       <th className={thBase}>Short Qty</th>
                       <th className={thBase}>Qty</th>
                       <th className={`${thBase} min-w-[8.5rem] w-36`}>Heat No.</th>
@@ -827,43 +951,43 @@ const RingsInwardCreatePage = () => {
                               {...register(`lines.${index}.packing_ratio`)}
                             />
                           </td>
-                          <td className={tdR}>
+                          <td className={`${tdR} ${isPalletMode ? 'bg-blue-50/20' : ''}`}>
                             <input
                               type="text"
                               inputMode="numeric"
-                              className={numInputRightClass}
+                              className={`${numInputRightClass} ${isPalletMode ? 'border-blue-300 font-medium' : ''}`}
                               {...register(`lines.${index}.pallet_count`, {
-                                onChange: () => recalcLineQty(index),
+                                onChange: () => onPalletChange(index),
                               })}
                             />
                           </td>
-                          <td className={tdR}>
+                          <td className={`${tdR} ${isPalletMode ? 'bg-blue-50/20' : ''}`}>
                             <input
                               type="text"
                               inputMode="decimal"
-                              className={numInputRightClass}
+                              className={`${numInputRightClass} ${isPalletMode ? 'border-blue-300 font-medium' : ''}`}
                               {...register(`lines.${index}.qty_per_pallet`, {
-                                onChange: () => recalcLineQty(index),
+                                onChange: () => onPalletChange(index),
                               })}
                             />
                           </td>
-                          <td className={tdR}>
+                          <td className={`${tdR} ${!isPalletMode ? 'bg-amber-50/20' : ''}`}>
                             <input
                               type="text"
                               inputMode="numeric"
-                              className={numInputRightClass}
+                              className={`${numInputRightClass} ${!isPalletMode ? 'border-amber-300 font-medium' : ''}`}
                               {...register(`lines.${index}.box_count`, {
-                                onChange: () => recalcLineQty(index),
+                                onChange: () => onBoxChange(index),
                               })}
                             />
                           </td>
-                          <td className={tdR}>
+                          <td className={`${tdR} ${!isPalletMode ? 'bg-amber-50/20' : ''}`}>
                             <input
                               type="text"
                               inputMode="decimal"
-                              className={numInputRightClass}
+                              className={`${numInputRightClass} ${!isPalletMode ? 'border-amber-300 font-medium' : ''}`}
                               {...register(`lines.${index}.qty_per_box`, {
-                                onChange: () => recalcLineQty(index),
+                                onChange: () => onBoxChange(index),
                               })}
                             />
                           </td>

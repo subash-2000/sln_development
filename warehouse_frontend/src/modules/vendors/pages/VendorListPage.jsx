@@ -15,6 +15,21 @@ const VendorListPage = () => {
   const initialColumns = [
     { key: 'code', label: 'Code', sortable: true, widthClass: 'w-28' },
     { key: 'name', label: 'Supplier Name', sortable: true },
+    {
+      key: 'packaging_type',
+      label: 'Packaging',
+      render: (row) =>
+        (row.packaging_type === 'PALLET' ||
+        /AGRASEN|FALSAN|UNIQUE|AASHITA/i.test(`${row.code || ''} ${row.name || ''}`)) ? (
+          <span className="text-xs px-2 py-0.5 rounded font-medium bg-blue-50 text-blue-700 border border-blue-200">
+            Pallets
+          </span>
+        ) : (
+          <span className="text-xs px-2 py-0.5 rounded font-medium bg-amber-50 text-amber-700 border border-amber-200">
+            C/Boxes
+          </span>
+        ),
+    },
     { key: 'gstin', label: 'GSTIN' },
     { key: 'contact_person', label: 'Contact' },
     { key: 'phone', label: 'Phone' },

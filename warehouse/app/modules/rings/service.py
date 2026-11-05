@@ -11,6 +11,7 @@ from app.core.constants import (
     InvoiceWorkflow,
     RingsDocumentStatus,
     RingsDocumentType,
+    is_pallet_supplier_blob,
 )
 from app.core.exceptions import ConflictException, NotFoundException, ValidationException
 from app.core.sequence import SequenceGenerator
@@ -241,9 +242,16 @@ class RingsService:
         lines_in: list[RingsLineCreate],
         company_id: uuid.UUID,
         location_id: uuid.UUID,
+        vendor: Vendor | None = None,
     ) -> tuple[list[RingsDocumentLine], Decimal]:
         built: list[RingsDocumentLine] = []
         ring_mass = Decimal("0")
+        is_pallet = False
+        if vendor:
+            is_pallet = (getattr(vendor, "packaging_type", None) == "PALLET") or is_pallet_supplier_blob(
+                f"{vendor.code} {vendor.name}", getattr(vendor, "packaging_type", None)
+            )
+
         for item in lines_in:
             product = (
                 await self.db.execute(
@@ -258,17 +266,46 @@ class RingsService:
             )
             if qty <= 0:
                 raise ValidationException("Line quantity must be greater than zero")
+
+            line_is_pallet = is_pallet
+            line_vendor_id = getattr(item, "vendor_id", None) or (vendor.id if vendor else None)
+            if item.vendor_id and (not vendor or item.vendor_id != vendor.id):
+                v_res = await self.db.execute(
+                    select(Vendor).where(Vendor.id == item.vendor_id, Vendor.company_id == company_id)
+                )
+                v_obj = v_res.scalar_one_or_none()
+                if v_obj:
+                    line_is_pallet = (getattr(v_obj, "packaging_type", None) == "PALLET") or is_pallet_supplier_blob(
+                        f"{v_obj.code} {v_obj.name}", getattr(v_obj, "packaging_type", None)
+                    )
+
+            p_count = int(item.pallet_count or 0)
+            p_qty = Decimal(str(item.qty_per_pallet or 0))
+            b_count = int(item.box_count or 0)
+            b_qty = Decimal(str(item.qty_per_box or 0))
+
+            if line_is_pallet:
+                final_pallet_count = p_count or b_count
+                final_qty_per_pallet = p_qty or b_qty or (Decimal(str(qty)) / final_pallet_count if final_pallet_count else Decimal("0"))
+                final_box_count = 0
+                final_qty_per_box = Decimal("0")
+            else:
+                final_box_count = b_count or p_count
+                final_qty_per_box = b_qty or p_qty or (Decimal(str(qty)) / final_box_count if final_box_count else Decimal("0"))
+                final_pallet_count = 0
+                final_qty_per_pallet = Decimal("0")
+
             ring_wt = item.per_ring_weight if item.per_ring_weight is not None else (product.net_weight or Decimal("0"))
             line = RingsDocumentLine(
                 product_id=product.id,
                 uom_id=uom_id,
                 location_id=location_id,
-                vendor_id=getattr(item, "vendor_id", None),
+                vendor_id=line_vendor_id,
                 heat_number=(item.heat_number or "").strip(),
-                pallet_count=item.pallet_count,
-                qty_per_pallet=item.qty_per_pallet,
-                box_count=item.box_count,
-                qty_per_box=item.qty_per_box,
+                pallet_count=final_pallet_count,
+                qty_per_pallet=final_qty_per_pallet,
+                box_count=final_box_count,
+                qty_per_box=final_qty_per_box,
                 quantity=qty,
                 short_quantity=item.short_quantity,
                 unit_rate=item.unit_rate,
@@ -340,7 +377,7 @@ class RingsService:
             payload.supplier_invoice_value = None
 
         location = await self._default_location(payload.warehouse_id, company_id)
-        lines, ring_mass = await self._build_lines(payload.lines, company_id, location.id)
+        lines, ring_mass = await self._build_lines(payload.lines, company_id, location.id, vendor=vendor)
         packing = payload.packing_weight or Decimal("0")
         g_weight = (ring_mass + packing).quantize(Decimal("0.001"))
 
@@ -444,7 +481,7 @@ class RingsService:
                 workflow = InvoiceWorkflow.JOB_WORK.value
 
         location = await self._default_location(payload.warehouse_id, company_id)
-        lines, ring_mass = await self._build_lines(payload.lines, company_id, location.id)
+        lines, ring_mass = await self._build_lines(payload.lines, company_id, location.id, vendor=vendor)
         packing = payload.packing_weight or sum((line.packing_weight or Decimal("0") for line in lines), Decimal("0"))
 
         requested: dict[tuple, Decimal] = {}

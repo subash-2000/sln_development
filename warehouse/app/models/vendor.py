@@ -55,6 +55,13 @@ class Vendor(BaseEntity):
         index=True,
     )
 
+    packaging_type: Mapped[str] = mapped_column(
+        String(20),
+        default="C_BOX",
+        nullable=False,
+        index=True,
+    )
+
     gstin: Mapped[str | None] = mapped_column(
         String(15),
         nullable=True,

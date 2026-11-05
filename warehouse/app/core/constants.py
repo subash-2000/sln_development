@@ -1,3 +1,4 @@
+import re
 from enum import Enum
 
 
@@ -276,6 +277,34 @@ class CountVarianceAction(str, Enum):
     ACCEPT = "ACCEPT"
     RECOUNT = "RECOUNT"
     OVERRIDE = "OVERRIDE"
+
+
+class SupplierPackagingType(str, Enum):
+    """Packaging mode for materials received from suppliers."""
+
+    PALLET = "PALLET"
+    C_BOX = "C_BOX"
+
+
+PALLET_SUPPLIERS: tuple[str, ...] = ("AGRASEN", "FALSAN", "UNIQUE", "AASHITA")
+C_BOX_SUPPLIERS: tuple[str, ...] = ("DEEPESH", "PUSHP", "PERFECT", "TURNING", "T POINT", "TPOINT")
+
+
+def is_pallet_supplier_blob(name_or_code: str | None, packaging_type: str | None = None) -> bool:
+    """Returns True if the supplier receives materials on Pallets, False if C/Boxes."""
+    if packaging_type:
+        pkg = packaging_type.strip().upper()
+        if "PALLET" in pkg:
+            return True
+        if "BOX" in pkg:
+            return False
+    if not name_or_code:
+        return False
+    clean = re.sub(r"[^A-Za-z0-9]", "", str(name_or_code).upper())
+    for kw in PALLET_SUPPLIERS:
+        if kw in clean:
+            return True
+    return False
 
 
 class InvoiceWorkflow(str, Enum):

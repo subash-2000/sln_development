@@ -121,6 +121,7 @@ class VendorService:
             legal_name=req.legal_name.strip() if req.legal_name else None,
             vendor_type=req.vendor_type.strip().upper(),
             invoice_workflow=(req.invoice_workflow or "STANDARD").strip().upper(),
+            packaging_type=(req.packaging_type or "C_BOX").strip().upper(),
             gstin=clean_gstin,
             pan=req.pan.strip().upper() if req.pan else None,
             email=req.email.strip().lower() if req.email else None,
@@ -183,6 +184,8 @@ class VendorService:
             vendor.vendor_type = req.vendor_type.strip().upper()
         if req.invoice_workflow is not None:
             vendor.invoice_workflow = req.invoice_workflow.strip().upper()
+        if req.packaging_type is not None:
+            vendor.packaging_type = req.packaging_type.strip().upper()
 
         if req.gstin is not None:
             clean_gstin = req.gstin.strip().upper() if req.gstin else None
@@ -267,6 +270,7 @@ class VendorService:
             legal_name=vendor.legal_name,
             vendor_type=vendor.vendor_type,
             invoice_workflow=vendor.invoice_workflow or "STANDARD",
+            packaging_type=vendor.packaging_type or "C_BOX",
             gstin=vendor.gstin,
             pan=vendor.pan,
             email=vendor.email,

@@ -16,6 +16,7 @@ from app.core.constants import (
     MoveState,
     TransactionStatus,
     TransactionType,
+    is_pallet_supplier_blob,
 )
 from app.core.exceptions import ConflictException, NotFoundException, ValidationException
 from app.core.sequence import SequenceGenerator
@@ -743,6 +744,12 @@ class LogisticsService:
 
         enriched_items: list[InwardParseLineItem] = []
         supplier_key = parsed.supplier_key or data.get("supplier_key")
+        is_pallet = False
+        if vendor:
+            is_pallet = (getattr(vendor, "packaging_type", None) == "PALLET") or is_pallet_supplier_blob(f"{vendor.code} {vendor.name}")
+        elif supplier_key or parsed.supplier_name:
+            is_pallet = is_pallet_supplier_blob(f"{supplier_key or ''} {parsed.supplier_name or ''}")
+
         hsn_updates = 0
         ratio_updates = 0
         header_packages = list(parsed.package_lines)
@@ -779,6 +786,25 @@ class LogisticsService:
             elif default_uom:
                 uom_code = default_uom.code
 
+            p_count = int(item.pallet_count or 0)
+            p_qty = float(item.qty_per_pallet or 0.0)
+            b_count = int(item.box_count or 0)
+            b_qty = float(item.qty_per_box or 0.0)
+            raw_pkg = int(package_count or item.package_count or (p_count if is_pallet else b_count) or (b_count if is_pallet else p_count) or 0)
+
+            if is_pallet:
+                final_pallet_count = p_count or b_count or raw_pkg
+                final_qty_per_pallet = p_qty or b_qty or (float(item.quantity) / final_pallet_count if final_pallet_count and item.quantity else 0.0)
+                final_box_count = 0
+                final_qty_per_box = 0.0
+                final_pkg_count = final_pallet_count
+            else:
+                final_box_count = b_count or p_count or raw_pkg
+                final_qty_per_box = b_qty or p_qty or (float(item.quantity) / final_box_count if final_box_count and item.quantity else 0.0)
+                final_pallet_count = 0
+                final_qty_per_pallet = 0.0
+                final_pkg_count = final_box_count
+
             enriched_items.append(
                 InwardParseLineItem(
                     description=item.description,
@@ -793,13 +819,13 @@ class LogisticsService:
                     lot_number=item.lot_number,
                     heat_number=item.lot_number,
                     part_number=part_number,
-                    package_count=package_count,
+                    package_count=final_pkg_count,
                     packing_ratio=packing_ratio,
                     packing_detail=item.packing_detail,
-                    box_count=item.box_count,
-                    qty_per_box=item.qty_per_box,
-                    pallet_count=item.pallet_count,
-                    qty_per_pallet=item.qty_per_pallet,
+                    box_count=final_box_count,
+                    qty_per_box=final_qty_per_box,
+                    pallet_count=final_pallet_count,
+                    qty_per_pallet=final_qty_per_pallet,
                     packing_weight=float(item.packing_weight or 0) if item.packing_weight else None,
                     challan_number=item.challan_number,
                     reference_number=item.reference_number,

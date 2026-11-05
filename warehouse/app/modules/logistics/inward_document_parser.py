@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 
+from app.core.constants import is_pallet_supplier_blob
+
 try:
     import fitz
 except Exception:
@@ -807,10 +809,14 @@ def parse_document_packing_weight(text: str) -> float | None:
     return None
 
 
-def parse_packing_details(text: str) -> dict[str, Any]:
+def parse_packing_details(text: str, is_pallet: bool = False) -> dict[str, Any]:
     """Extract packing qty × count = total (ratio) from challan/invoice text."""
     compact = re.sub(r"\s+", "", text or "")
     found: dict[str, Any] = {}
+    has_pallet_text = bool(re.search(r"(?i)\b(?:pallet|pallets|plt|plts)\b", text or ""))
+    has_box_text = bool(re.search(r"(?i)\b(?:box|boxes|c/box|carton|cartons)\b", text or ""))
+    use_pallet = is_pallet or (has_pallet_text and not has_box_text)
+
     match = re.search(
         r"PackingDetails?:?([\d,]+)[xX×*]([\d,]+)=?([\d,]*)(?:\(([^)]+)\))?",
         compact,
@@ -830,8 +836,11 @@ def parse_packing_details(text: str) -> dict[str, Any]:
                 "pack_count": count_int,
                 "quantity": total,
                 "packing_ratio": ratio,
-                "box_count": count_int,
-                "qty_per_box": qty_each,
+                "pallet_count": count_int if use_pallet else 0,
+                "qty_per_pallet": qty_each if use_pallet else 0.0,
+                "box_count": 0 if use_pallet else count_int,
+                "qty_per_box": 0.0 if use_pallet else qty_each,
+                "package_count": count_int,
             }
         )
         if qty_each is not None and count_int is not None:
@@ -849,16 +858,36 @@ def parse_packing_details(text: str) -> dict[str, Any]:
         ratio_match = re.search(r"\((\d+(?:\s*\+\s*\d+)+)\)", text or "")
         if ratio_match:
             found["packing_ratio"] = re.sub(r"\s+", "", ratio_match.group(1))
-    if found.get("box_count") is None:
-        boxes = re.search(r"PACKINGDETAILS?:?(\d+)BOX", compact, re.I)
-        if boxes:
-            found["box_count"] = int(boxes.group(1))
-            found["package_count"] = int(boxes.group(1))
+    if found.get("box_count") is None and found.get("pallet_count") is None:
+        pallets_m = re.search(r"PACKINGDETAILS?:?(\d+)\s*(?:PALLET|PLT)", compact, re.I)
+        if pallets_m:
+            c = int(pallets_m.group(1))
+            found["pallet_count"] = c
+            found["package_count"] = c
+            found["box_count"] = 0
+            found["qty_per_pallet"] = 0.0
+            found["qty_per_box"] = 0.0
+        else:
+            boxes = re.search(r"PACKINGDETAILS?:?(\d+)\s*(?:BOX|CARTON)", compact, re.I)
+            if boxes:
+                c = int(boxes.group(1))
+                if use_pallet:
+                    found["pallet_count"] = c
+                    found["package_count"] = c
+                    found["box_count"] = 0
+                    found["qty_per_pallet"] = 0.0
+                    found["qty_per_box"] = 0.0
+                else:
+                    found["box_count"] = c
+                    found["package_count"] = c
+                    found["pallet_count"] = 0
+                    found["qty_per_box"] = 0.0
+                    found["qty_per_pallet"] = 0.0
     return found
 
 
-def _apply_packing(text: str, items: list[ParsedLineItem]) -> None:
-    packing = parse_packing_details(text)
+def _apply_packing(text: str, items: list[ParsedLineItem], is_pallet: bool = False) -> None:
+    packing = parse_packing_details(text, is_pallet=is_pallet)
     if not packing or not items:
         return
     first = items[0]
@@ -866,11 +895,18 @@ def _apply_packing(text: str, items: list[ParsedLineItem]) -> None:
         first.packing_ratio = packing["packing_ratio"]
     if packing.get("packing_detail"):
         first.packing_detail = packing["packing_detail"]
-    if packing.get("box_count") is not None:
+    if packing.get("pallet_count"):
+        first.pallet_count = packing["pallet_count"]
+        first.qty_per_pallet = packing.get("qty_per_pallet") or 0.0
+        first.box_count = 0
+        first.qty_per_box = 0.0
+        first.package_count = packing.get("package_count") or packing["pallet_count"]
+    elif packing.get("box_count") is not None:
         first.box_count = packing["box_count"]
+        first.qty_per_box = packing.get("qty_per_box") or 0.0
+        first.pallet_count = 0
+        first.qty_per_pallet = 0.0
         first.package_count = packing.get("package_count") or packing["box_count"]
-    if packing.get("qty_per_box") is not None:
-        first.qty_per_box = packing["qty_per_box"]
     if packing.get("quantity") and not first.quantity:
         first.quantity = packing["quantity"]
     elif packing.get("quantity") and first.quantity in (0, None):
@@ -962,7 +998,7 @@ def _split_delivery_challan_sections(text: str) -> list[str]:
     return [text]
 
 
-def _parse_delivery_challan_section(section: str) -> ParsedLineItem | None:
+def _parse_delivery_challan_section(section: str, is_pallet: bool = False) -> ParsedLineItem | None:
     desc_m = re.search(
         r"Description\s*(?:of)?\s*Goods[^\S\n]+([\d\w][\d\w\s]*(?:OR|IR)\s*Poyo)",
         section,
@@ -991,7 +1027,7 @@ def _parse_delivery_challan_section(section: str) -> ParsedLineItem | None:
     }:
         return None
     heat_m = re.search(r"Heat\s*No\.?\s*:?\s*(\d+)", section, re.I)
-    packing = parse_packing_details(section)
+    packing = parse_packing_details(section, is_pallet=is_pallet)
     qty = packing.get("quantity")
     rate: float | None = None
     hsn: str | None = None
@@ -1005,6 +1041,12 @@ def _parse_delivery_challan_section(section: str) -> ParsedLineItem | None:
         hsn = "84829900"
     if qty is None:
         return None
+
+    pallet_count = packing.get("pallet_count") or (packing.get("pack_count") if is_pallet else 0)
+    qty_per_pallet = packing.get("qty_per_pallet") or (packing.get("qty_each") if is_pallet else 0.0)
+    box_count = 0 if is_pallet else (packing.get("box_count") or packing.get("pack_count") or 0)
+    qty_per_box = 0.0 if is_pallet else (packing.get("qty_per_box") or packing.get("qty_each") or 0.0)
+
     item = ParsedLineItem(
         description=description,
         quantity=float(qty),
@@ -1015,15 +1057,17 @@ def _parse_delivery_challan_section(section: str) -> ParsedLineItem | None:
         lot_number=heat_m.group(1) if heat_m else None,
         packing_ratio=packing.get("packing_ratio"),
         packing_detail=packing.get("packing_detail"),
-        box_count=packing.get("box_count"),
-        qty_per_box=packing.get("qty_per_box"),
-        package_count=packing.get("pack_count") or packing.get("box_count"),
+        pallet_count=pallet_count,
+        qty_per_pallet=qty_per_pallet,
+        box_count=box_count,
+        qty_per_box=qty_per_box,
+        package_count=packing.get("pack_count") or pallet_count or box_count,
     )
     _apply_item_logistics(item, section)
     return item
 
 
-def _parse_delivery_challan_table(text: str) -> list[ParsedLineItem]:
+def _parse_delivery_challan_table(text: str, is_pallet: bool = False) -> list[ParsedLineItem]:
     items: list[ParsedLineItem] = []
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
 
@@ -1075,7 +1119,7 @@ def _parse_delivery_challan_table(text: str) -> list[ParsedLineItem]:
             elif re.match(r"^\d{2,7}(?:\.0+)?$", post_ln) and qty is None:
                 qty = _to_number(post_ln)
 
-        packing = parse_packing_details("\n".join(post_lines))
+        packing = parse_packing_details("\n".join(post_lines), is_pallet=is_pallet)
         if packing.get("quantity"):
             qty = packing["quantity"]
 
@@ -1083,6 +1127,11 @@ def _parse_delivery_challan_table(text: str) -> list[ParsedLineItem]:
         lot_number = heat_m.group(1) if heat_m else None
 
         if qty:
+            pallet_count = packing.get("pallet_count") or (packing.get("pack_count") if is_pallet else 0)
+            qty_per_pallet = packing.get("qty_per_pallet") or (packing.get("qty_each") if is_pallet else 0.0)
+            box_count = 0 if is_pallet else (packing.get("box_count") or packing.get("pack_count") or 0)
+            qty_per_box = 0.0 if is_pallet else (packing.get("qty_per_box") or packing.get("qty_each") or 0.0)
+
             item = ParsedLineItem(
                 description=description,
                 quantity=float(qty),
@@ -1093,24 +1142,28 @@ def _parse_delivery_challan_table(text: str) -> list[ParsedLineItem]:
                 lot_number=lot_number,
                 packing_ratio=packing.get("packing_ratio"),
                 packing_detail=packing.get("packing_detail"),
-                box_count=packing.get("box_count"),
-                qty_per_box=packing.get("qty_per_box"),
-                package_count=packing.get("pack_count") or packing.get("box_count"),
+                pallet_count=pallet_count,
+                qty_per_pallet=qty_per_pallet,
+                box_count=box_count,
+                qty_per_box=qty_per_box,
+                package_count=packing.get("pack_count") or pallet_count or box_count,
             )
             _apply_item_logistics(item, post_text)
             items.append(item)
     return items
 
 
-def _parse_delivery_challan_document(text: str) -> InwardDocumentParseResult:
-    items: list[ParsedLineItem] = _parse_delivery_challan_table(text)
+def _parse_delivery_challan_document(text: str, is_pallet: bool | None = None) -> InwardDocumentParseResult:
+    if is_pallet is None:
+        is_pallet = is_pallet_supplier_blob(text)
+    items: list[ParsedLineItem] = _parse_delivery_challan_table(text, is_pallet=is_pallet)
     if not items:
         for section in _split_delivery_challan_sections(text):
-            item = _parse_delivery_challan_section(section)
+            item = _parse_delivery_challan_section(section, is_pallet=is_pallet)
             if item:
                 items.append(item)
     if not items:
-        single = _parse_delivery_challan_section(text)
+        single = _parse_delivery_challan_section(text, is_pallet=is_pallet)
         if single:
             items.append(single)
 
@@ -1153,7 +1206,7 @@ def _parse_delivery_challan_document(text: str) -> InwardDocumentParseResult:
 
 
 def _parse_aashita(text: str) -> InwardDocumentParseResult:
-    return _parse_delivery_challan_document(text)
+    return _parse_delivery_challan_document(text, is_pallet=True)
 
 
 def _parse_manu(text: str) -> InwardDocumentParseResult:
@@ -1273,13 +1326,15 @@ def _parse_nhb(text: str) -> InwardDocumentParseResult:
 
 def detect_and_parse(text: str, filename: str) -> InwardDocumentParseResult:
     name = filename.lower()
+    is_pallet = is_pallet_supplier_blob(f"{name} {text}")
     if (
         "aashita" in name
         or "delivery challan" in text.lower()
         or "aashitaenterprises" in text.replace(" ", "").lower()
         or "aashita enterprises" in text.lower()
+        or is_pallet
     ):
-        generic = _parse_delivery_challan_document(text)
+        generic = _parse_delivery_challan_document(text, is_pallet=is_pallet)
         if generic.items:
             return generic
         return _parse_aashita(text)
