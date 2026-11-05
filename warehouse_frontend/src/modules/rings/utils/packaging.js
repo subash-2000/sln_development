@@ -11,3 +11,4 @@ export const isPalletSupplier = (vendor) => {
   const blob = `${vendor.code || ''} ${vendor.name || ''}`.toUpperCase();
   return /AGRASEN|FALSAN|UNIQUE|AASHITA/i.test(blob);
 };
+

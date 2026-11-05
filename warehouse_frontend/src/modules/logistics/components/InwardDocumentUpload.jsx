@@ -26,7 +26,18 @@ const mergeParsed = (prev, next, fileName) => {
       : prev.packing_weight ?? next.packing_weight;
 
   return {
+    ...next,
     ...prev,
+    vendor_id: prev.vendor_id || next.vendor_id,
+    supplier_key: prev.supplier_key || next.supplier_key,
+    supplier_name: prev.supplier_name || next.supplier_name,
+    transporter_name: prev.transporter_name || next.transporter_name,
+    vehicle_number: prev.vehicle_number || next.vehicle_number,
+    lr_number: prev.lr_number || next.lr_number,
+    lr_date: prev.lr_date || next.lr_date,
+    transaction_date: prev.transaction_date || next.transaction_date,
+    reference_document_number: prev.reference_document_number || next.reference_document_number,
+    reference_date: prev.reference_date || next.reference_date,
     items: [...(prev.items || []), ...(next.items || [])],
     packing_weight,
     warnings,

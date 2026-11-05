@@ -38,7 +38,8 @@ const LogisticsOutwardForm = ({ onSubmit, isLoading }) => {
 
   const warehouseId = watch('warehouse_id');
   const { data: locationsData } = useLocations(
-    warehouseId ? { warehouse_id: warehouseId, page_size: 200 } : { page_size: 0 }
+    warehouseId ? { warehouse_id: warehouseId, page_size: 200 } : null,
+    { enabled: Boolean(warehouseId) }
   );
 
   const warehouses = useMemo(() => {

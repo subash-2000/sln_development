@@ -1,11 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { locationsApi } from '../api/locations.api';
 
-export const useLocations = (params) => {
+export const useLocations = (params, options = {}) => {
   return useQuery({
     queryKey: ['locations', params],
-    queryFn: () => locationsApi.list(params),
+    queryFn: () => locationsApi.list(params || {}),
     placeholderData: (previous) => previous,
+    ...options,
   });
 };
 

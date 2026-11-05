@@ -101,19 +101,24 @@ def _ocr_page(page) -> str:
     return "\n".join(line[1] for line in result)
 
 
-def _extract_pdf_text(data: bytes) -> str:
-    """Use embedded PDF text on every page; OCR only when a page has no text."""
+def _extract_pdf_pages(data: bytes) -> list[str]:
+    """Return text for each page in the PDF; OCR only when a page has no text."""
     doc = fitz.open(stream=data, filetype="pdf")
-    chunks: list[str] = []
+    pages: list[str] = []
     for page in doc:
         native = (page.get_text() or "").strip()
         if len(native) > 80:
-            chunks.append(native)
+            pages.append(native)
         else:
             ocr = _ocr_page(page).strip()
             if ocr:
-                chunks.append(ocr)
-    return "\n\n".join(chunks)
+                pages.append(ocr)
+    return pages
+
+
+def _extract_pdf_text(data: bytes) -> str:
+    """Use embedded PDF text on every page; OCR only when a page has no text."""
+    return "\n\n".join(_extract_pdf_pages(data))
 
 
 def _ocr_pdf_first_page(data: bytes) -> str:
@@ -159,6 +164,24 @@ _FIELD_LABELS = {
     "delivery challan",
     "lr no.",
     "lr/gr no.",
+    "sr no",
+    "srno",
+    "sr. no.",
+    "description",
+    "description of goods",
+    "rate",
+    "rate/pc",
+    "rate / pc",
+    "quantity",
+    "qty",
+    "hsn",
+    "hsn/sac",
+    "amount",
+    "amount(in rs)",
+    "amount (in rs)",
+    "amount chargeable",
+    "amountchargeable",
+    "total",
 }
 
 
@@ -188,6 +211,19 @@ def _is_field_label(value: str) -> bool:
         "buyersorderno",
         "dispatchto",
         "party",
+        "ratepc",
+        "rate",
+        "quantity",
+        "qty",
+        "amountinrs",
+        "amount",
+        "hsnsac",
+        "hsn",
+        "srno",
+        "descriptionofgoods",
+        "description",
+        "total",
+        "inpcs",
     }:
         return True
     return v.startswith("motor vehicle") or v.startswith("bill of lading") or v.startswith("motorvehicle")
@@ -818,11 +854,11 @@ def parse_packing_details(text: str, is_pallet: bool = False) -> dict[str, Any]:
     use_pallet = is_pallet or (has_pallet_text and not has_box_text)
 
     match = re.search(
-        r"PackingDetails?:?([\d,]+)[xX×*]([\d,]+)=?([\d,]*)(?:\(([^)]+)\))?",
+        r"(?:PackingDetails?:?)?([\d,]+)[xX×*]([\d,]+)=?([\d,]*)(?:\(([^)]+)\))?",
         compact,
         re.I,
     )
-    if match:
+    if match and match.group(1) and match.group(2):
         qty_each = _to_number(match.group(1))
         pack_count = _to_number(match.group(2))
         total = _to_number(match.group(3)) if match.group(3) else None
@@ -1000,12 +1036,14 @@ def _split_delivery_challan_sections(text: str) -> list[str]:
 
 def _parse_delivery_challan_section(section: str, is_pallet: bool = False) -> ParsedLineItem | None:
     desc_m = re.search(
-        r"Description\s*(?:of)?\s*Goods[^\S\n]+([\d\w][\d\w\s]*(?:OR|IR)\s*Poyo)",
+        r"Description\s*(?:of)?\s*Goods\s*[:\n\r\t ]+([\d\w][\d\w\s]*(?:OR|IR)\s*Poyo)",
         section,
         re.I,
     )
     if not desc_m:
-        desc_m = re.search(r"Description\s*(?:of)?\s*Goods[^\S\n]+([^\n]+)", section, re.I)
+        desc_m = re.search(r"Description\s*(?:of)?\s*Goods\s*[:\n\r\t ]+([^\n\r]+)", section, re.I)
+    if not desc_m:
+        desc_m = re.search(r"(?:^|\n)\s*(\d{4,5}\s*(?:OR|IR)[^\n\r]*Poyo)", section, re.I)
     if not desc_m:
         return None
     description = _norm_space(desc_m.group(1))
@@ -1153,10 +1191,158 @@ def _parse_delivery_challan_table(text: str, is_pallet: bool = False) -> list[Pa
     return items
 
 
-def _parse_delivery_challan_document(text: str, is_pallet: bool | None = None) -> InwardDocumentParseResult:
+def _parse_delivery_challan_page(page_text: str, is_pallet: bool = False) -> list[ParsedLineItem]:
+    challan_no, challan_date = _parse_challan_number_and_date(page_text)
+    if not challan_no:
+        m = re.search(r"\b(DC\d{7,12})\b", page_text, re.I)
+        if m:
+            challan_no = m.group(1).upper()
+
+    logistics = _parse_dispatch_logistics(page_text)
+    lr_no = logistics.get("lr_number")
+    lr_dt = logistics.get("lr_date")
+    transporter = logistics.get("transporter_name")
+    vehicle = logistics.get("vehicle_number")
+
+    ref_no = None
+    m_dispatch = re.search(r"Dispatch\s*Doc\s*(?:No\.?|Number)?\s*[:\n\r\t ]*(\d{2,6})", page_text, re.I)
+    if m_dispatch and _is_plausible_reference_number(m_dispatch.group(1)):
+        ref_no = m_dispatch.group(1)
+    elif challan_no:
+        m_suf = re.search(r"(\d{4})$", challan_no)
+        if m_suf:
+            ref_no = m_suf.group(1)
+    if not ref_no:
+        m_ref = re.search(r"(\d{2,6})\s+DT\.?", page_text, re.I)
+        if m_ref and _is_plausible_reference_number(m_ref.group(1)):
+            if not lr_no or m_ref.group(1) != lr_no:
+                ref_no = m_ref.group(1)
+
+    packing_blocks = re.findall(
+        r"(?:Packing\s*Details?\s*:?\s*)?([\d,]+)\s*[xX×*]\s*([\d,]+)\s*=\s*([\d,]+)(?:\s*\(([^)]+)\))?",
+        page_text,
+        re.I,
+    )
+    heat_blocks = re.findall(r"Heat\s*No\.?\s*:?\s*([A-Za-z0-9]+)", page_text, re.I)
+
+    specific_descs = re.findall(r"(?i)\b(\d{4,5}\s*(?:OR|IR)[\w\s]*Poyo)\b", page_text)
+    if not specific_descs:
+        specific_descs = re.findall(r"(?i)(?:^|\n)\s*(\d{4,5}\s*(?:OR|IR)[^\n\r]*)\b", page_text)
+    if specific_descs:
+        descs = [_norm_space(d) for d in specific_descs if not _is_field_label(d)]
+    else:
+        raw_descs = re.findall(
+            r"Description\s*(?:of)?\s*Goods\s*[\n\r:]+\s*([^\n\r]+)",
+            page_text,
+            re.I,
+        )
+        descs = [_norm_space(d) for d in raw_descs if not _is_field_label(d)]
+
+    rows = re.findall(r"\b(8482\d{4})\b\s+([\d.]+)\s+(\d+)\s+([\d.]+)", page_text)
+    if not rows:
+        alt_row = re.search(r"\b(\d+\.\d{2})\b\s+(\d+)\s+(\d+\.\d{2})", page_text)
+        if alt_row:
+            hsn_m = re.search(r"\b(8482\d{4})\b", page_text)
+            hsn_found = hsn_m.group(1) if hsn_m else "84829900"
+            rows = [(hsn_found, alt_row.group(1), alt_row.group(2), alt_row.group(3))]
+
+    n_items = max(len(descs), len(packing_blocks), len(rows))
+    if n_items == 0:
+        return []
+
+    items: list[ParsedLineItem] = []
+    for i in range(n_items):
+        desc = descs[i] if i < len(descs) else (descs[0] if descs else "Bearing Ring")
+        packing = {}
+        if i < len(packing_blocks):
+            pb = packing_blocks[i]
+            # pb is (qty_each, pack_count, total, ratio)
+            q_each = _to_number(pb[0]) or 0.0
+            p_cnt = int(_to_number(pb[1]) or 0)
+            tot = _to_number(pb[2]) if pb[2] else (q_each * p_cnt)
+            rat = pb[3].strip() if len(pb) > 3 and pb[3] else None
+            p_detail = f"{int(q_each)}x{p_cnt} = {int(tot)}"
+            if rat:
+                p_detail += f" ({rat})"
+            packing = {
+                "quantity": tot,
+                "pack_count": p_cnt,
+                "qty_each": q_each,
+                "packing_ratio": rat,
+                "packing_detail": p_detail,
+                "pallet_count": p_cnt if is_pallet else 0,
+                "qty_per_pallet": q_each if is_pallet else 0.0,
+                "box_count": 0 if is_pallet else p_cnt,
+                "qty_per_box": 0.0 if is_pallet else q_each,
+            }
+        else:
+            packing = parse_packing_details(page_text, is_pallet=is_pallet)
+
+        heat = (
+            _norm_space(heat_blocks[i])
+            if i < len(heat_blocks)
+            else (_norm_space(heat_blocks[0]) if heat_blocks else None)
+        )
+        rate = None
+        qty = packing.get("quantity")
+        hsn = "84829900"
+        if i < len(rows):
+            hsn = rows[i][0]
+            rate = float(rows[i][1])
+            if not qty:
+                qty = float(rows[i][2])
+
+        pallet_count = packing.get("pallet_count") or (packing.get("pack_count") if is_pallet else 0)
+        qty_per_pallet = packing.get("qty_per_pallet") or (packing.get("qty_each") if is_pallet else 0.0)
+        box_count = 0 if is_pallet else (packing.get("box_count") or packing.get("pack_count") or 0)
+        qty_per_box = 0.0 if is_pallet else (packing.get("qty_per_box") or packing.get("qty_each") or 0.0)
+
+        if qty:
+            items.append(
+                ParsedLineItem(
+                    description=desc,
+                    quantity=float(qty),
+                    sku_guess=_sku_from_description(desc),
+                    hsn=hsn,
+                    rate=rate,
+                    uom="PCS",
+                    lot_number=heat,
+                    packing_ratio=packing.get("packing_ratio"),
+                    packing_detail=packing.get("packing_detail"),
+                    pallet_count=pallet_count,
+                    qty_per_pallet=qty_per_pallet,
+                    box_count=box_count,
+                    qty_per_box=qty_per_box,
+                    package_count=pallet_count if is_pallet else box_count,
+                    challan_number=challan_no,
+                    challan_date=challan_date,
+                    reference_number=ref_no,
+                    reference_date=challan_date,
+                    transporter_name=transporter,
+                    vehicle_number=vehicle,
+                    lr_number=lr_no,
+                    lr_date=lr_dt,
+                )
+            )
+    return items
+
+
+def _parse_delivery_challan_document(
+    text: str, is_pallet: bool | None = None, pages: list[str] | None = None
+) -> InwardDocumentParseResult:
     if is_pallet is None:
         is_pallet = is_pallet_supplier_blob(text)
-    items: list[ParsedLineItem] = _parse_delivery_challan_table(text, is_pallet=is_pallet)
+    items: list[ParsedLineItem] = []
+
+    if pages and len(pages) > 0:
+        for p in pages:
+            items.extend(_parse_delivery_challan_page(p, is_pallet=is_pallet))
+
+    if not items:
+        items = _parse_delivery_challan_page(text, is_pallet=is_pallet)
+
+    if not items:
+        items = _parse_delivery_challan_table(text, is_pallet=is_pallet)
     if not items:
         for section in _split_delivery_challan_sections(text):
             item = _parse_delivery_challan_section(section, is_pallet=is_pallet)
@@ -1205,8 +1391,8 @@ def _parse_delivery_challan_document(text: str, is_pallet: bool | None = None) -
     return _finish_result(result, text)
 
 
-def _parse_aashita(text: str) -> InwardDocumentParseResult:
-    return _parse_delivery_challan_document(text, is_pallet=True)
+def _parse_aashita(text: str, pages: list[str] | None = None) -> InwardDocumentParseResult:
+    return _parse_delivery_challan_document(text, is_pallet=True, pages=pages)
 
 
 def _parse_manu(text: str) -> InwardDocumentParseResult:
@@ -1324,9 +1510,12 @@ def _parse_nhb(text: str) -> InwardDocumentParseResult:
     return _finish_result(result, text)
 
 
-def detect_and_parse(text: str, filename: str) -> InwardDocumentParseResult:
+def detect_and_parse(
+    text: str, filename: str = "", is_pallet: bool | None = None, pages: list[str] | None = None
+) -> InwardDocumentParseResult:
     name = filename.lower()
-    is_pallet = is_pallet_supplier_blob(f"{name} {text}")
+    if is_pallet is None:
+        is_pallet = is_pallet_supplier_blob(f"{name} {text}")
     if (
         "aashita" in name
         or "delivery challan" in text.lower()
@@ -1334,10 +1523,10 @@ def detect_and_parse(text: str, filename: str) -> InwardDocumentParseResult:
         or "aashita enterprises" in text.lower()
         or is_pallet
     ):
-        generic = _parse_delivery_challan_document(text, is_pallet=is_pallet)
+        generic = _parse_delivery_challan_document(text, is_pallet=is_pallet, pages=pages)
         if generic.items:
             return generic
-        return _parse_aashita(text)
+        return _parse_aashita(text, pages=pages)
     if "manu" in name or "manu yantralaya" in text.lower():
         return _parse_manu(text)
     if "nhb" in name or "nhbball" in text.replace(" ", "").lower():
@@ -1353,13 +1542,14 @@ def detect_and_parse(text: str, filename: str) -> InwardDocumentParseResult:
 
 
 def parse_inward_pdf(file_bytes: bytes, filename: str) -> InwardDocumentParseResult:
-    text = _extract_pdf_text(file_bytes)
+    pages = _extract_pdf_pages(file_bytes)
+    text = "\n\n".join(pages)
     if not text.strip():
         return InwardDocumentParseResult(
             document_type="UNKNOWN",
             warnings=["OCR returned no text. Ensure the PDF is a clear scan."],
         )
-    return detect_and_parse(text, filename)
+    return detect_and_parse(text, filename, pages=pages)
 
 
 def result_to_dict(result: InwardDocumentParseResult) -> dict[str, Any]:
