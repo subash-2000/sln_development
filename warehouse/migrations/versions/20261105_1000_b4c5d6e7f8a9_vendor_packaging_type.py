@@ -110,3 +110,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_vendors_packaging_type", table_name="vendors")
     op.drop_column("vendors", "packaging_type")
+

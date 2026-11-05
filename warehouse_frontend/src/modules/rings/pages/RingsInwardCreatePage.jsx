@@ -12,6 +12,7 @@ import { useProducts, useUOMs } from '../../products/hooks/use-products';
 import { useVendors } from '../../vendors/hooks/use-vendors';
 import { useWarehouses } from '../../warehouses/hooks/use-warehouses';
 import { useCreateRingsInward, useRingsSupplierTypes } from '../hooks/use-rings';
+import { isPalletSupplier } from '../utils/packaging';
 
 const emptyLine = () => ({
   product_id: '',
@@ -55,15 +56,6 @@ const resolveParsedRefNo = (line, challanNumber) => {
   const challan = String(challanNumber || line.challan_number || line.source_document_number || '').trim();
   const m = challan.match(/(\d{4})$/i);
   return m ? m[1] : '';
-};
-
-export const isPalletSupplier = (vendor) => {
-  if (!vendor) return false;
-  const pkg = String(vendor.packaging_type || '').toUpperCase();
-  if (pkg.includes('PALLET')) return true;
-  if (pkg.includes('BOX')) return false;
-  const blob = `${vendor.code || ''} ${vendor.name || ''}`.toUpperCase();
-  return /AGRASEN|FALSAN|UNIQUE|AASHITA/i.test(blob);
 };
 
 const buildPackingDetail = (line, isPallet = false) => {
