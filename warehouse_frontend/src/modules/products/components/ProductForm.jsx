@@ -66,6 +66,7 @@ const ProductForm = ({ initialData, onSubmit, isLoading, isEdit = false }) => {
         package_tracking_type: '',
         package_tracking_value: '',
         packing_ratio: '',
+        packing_weight: '',
         is_lot_tracked: false,
         is_active: true,
         vendor_ids: [],
@@ -88,6 +89,7 @@ const ProductForm = ({ initialData, onSubmit, isLoading, isEdit = false }) => {
       package_tracking_type: initialData.package_tracking_type || '',
       package_tracking_value: initialData.package_tracking_value || '',
       packing_ratio: initialData.packing_ratio || '',
+      packing_weight: initialData.packing_weight ?? '',
       is_lot_tracked: initialData.is_lot_tracked ?? false,
       is_active: initialData.is_active ?? (initialData.status === 'ACTIVE'),
       vendor_ids: (initialData.vendor_ids || []).map((id) => String(id)),
@@ -286,6 +288,16 @@ const ProductForm = ({ initialData, onSubmit, isLoading, isEdit = false }) => {
               error={errors.packing_ratio?.message}
               className={compactInputClass}
               {...register('packing_ratio')}
+            />
+            <Input
+              label="Packing weight (kg)"
+              type="text"
+              inputMode="decimal"
+              placeholder="0.000"
+              helperText="Default packing weight (kg) for inward lines when PDF has no line value"
+              error={errors.packing_weight?.message}
+              className={compactInputClass}
+              {...register('packing_weight')}
             />
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-6">
               <div className="flex items-center space-x-2">

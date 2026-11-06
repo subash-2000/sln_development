@@ -1,19 +1,26 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCreateLocation } from '../hooks/use-locations';
 import LocationForm from '../components/LocationForm';
 import PageHeader from '../../../components/common/PageHeader';
+import {
+  buildLocationCreatePayload,
+  getLocationErrorMessage,
+} from '../utils/locationPayload';
 
 const LocationCreatePage = () => {
   const navigate = useNavigate();
   const { mutateAsync: createLocation, isPending } = useCreateLocation();
+  const [errorMessage, setErrorMessage] = useState(null);
 
   const handleSubmit = async (data) => {
+    setErrorMessage(null);
     try {
-      await createLocation(data);
+      await createLocation(buildLocationCreatePayload(data));
       navigate('/locations');
     } catch (error) {
       console.error('Failed to create location:', error);
+      setErrorMessage(getLocationErrorMessage(error, 'Failed to create location.'));
     }
   };
 
@@ -29,7 +36,7 @@ const LocationCreatePage = () => {
           { label: 'Add Location' },
         ]}
       />
-      <LocationForm onSubmit={handleSubmit} isLoading={isPending} />
+      <LocationForm onSubmit={handleSubmit} isLoading={isPending} serverError={errorMessage} />
     </div>
   );
 };

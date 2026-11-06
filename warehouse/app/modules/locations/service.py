@@ -189,6 +189,7 @@ class LocationService:
             allow_mixed_vendors=request.allow_mixed_vendors,
             path=path,
             status=request.status.value,
+            is_active=request.status == EntityStatus.ACTIVE,
             created_by_id=current_user_id,
             updated_by_id=current_user_id,
         )
@@ -304,6 +305,7 @@ class LocationService:
             location.allow_mixed_vendors = request.allow_mixed_vendors
         if request.status is not None:
             location.status = request.status.value
+            location.is_active = request.status == EntityStatus.ACTIVE
 
         location.updated_by_id = current_user_id
 

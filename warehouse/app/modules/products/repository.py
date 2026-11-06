@@ -169,6 +169,7 @@ class ProductRepository:
                 "net_weight": Product.net_weight,
                 "heat_number": Product.heat_number,
                 "packing_ratio": Product.packing_ratio,
+                "packing_weight": Product.packing_weight,
                 "hsn_code": Product.hsn_code,
                 "hsn": Product.hsn_code,
                 "status": Product.status,

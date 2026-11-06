@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Trash2, Pencil, X } from 'lucide-react';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
@@ -12,7 +12,12 @@ import { useProducts, useUOMs } from '../../products/hooks/use-products';
 import { useVendors } from '../../vendors/hooks/use-vendors';
 import { useWarehouses } from '../../warehouses/hooks/use-warehouses';
 import { useCreateRingsInward, useRingsSupplierTypes } from '../hooks/use-rings';
-import { isPalletSupplier } from '../utils/packaging';
+import {
+  isBulkInwardLine,
+  isPalletSupplier,
+  isPalletSupplierBlob,
+  normalizeParsedItemsPacking,
+} from '../utils/packaging';
 
 const emptyLine = () => ({
   product_id: '',
@@ -141,6 +146,11 @@ const thBase =
 const tdBase = 'px-1 py-1.5 align-middle';
 const tdR = `${tdBase} text-right`;
 const tdAmount = `${tdBase} text-center tabular-nums`;
+const qtyTotalTdClass = `${tdR} min-w-[7rem] w-[7rem]`;
+const qtyTotalInputClass = `${numInputRightClass} min-w-[6.5rem] font-medium`;
+const rateInputTdClass = `${tdR} min-w-[5.5rem] w-[5.5rem]`;
+const wtInputTdClass = `${tdR} min-w-[6rem] w-[6rem]`;
+const amountDisplayTdClass = `${tdAmount} min-w-[6.5rem]`;
 const itemRowTrClass =
   'bg-gray-50/80 [&>td:first-child]:rounded-l-md [&>td:last-child]:rounded-r-md border-y border-gray-100';
 const remarkEditSlotClass = 'shrink-0 w-[22px]';
@@ -172,49 +182,167 @@ const formatHsnDisplay = (code) => {
   return s.replace(/\.0+$/, '');
 };
 
+const inferRingSkuFromLine = (line) => {
+  const blob = `${line?.sku_guess || ''} ${line?.description || ''}`.toUpperCase();
+  const compact = blob.replace(/\s+/g, '');
+  const sizeMatch = blob.match(/\b(\d{3,5})\b/) || compact.match(/(?:OM|IM)(\d{3,5})/);
+  if (!sizeMatch) return '';
+  const size = sizeMatch[1];
+  const isOuter =
+    /\bOR\b|ORPOYO|OUTER|\d{3,5}OR\b/.test(blob) ||
+    compact.startsWith('OM') ||
+    compact.includes(`OM${size}`);
+  const isInner =
+    /\bIR\b|IRPOYO|INNER|\d{3,5}IR\b/.test(blob) ||
+    compact.startsWith('IM') ||
+    compact.includes(`IM${size}`);
+  if (isOuter && !isInner) return `OM${size}`;
+  if (isInner && !isOuter) return `IM${size}`;
+  return '';
+};
+
+const normalizeSkuToken = (value) => String(value || '').toUpperCase().replace(/\s+/g, '');
+const normalizeRatio = (value) => String(value || '').replace(/\s+/g, '').toUpperCase();
+
+/** Build SKU tokens to match master rows like OM6005, IM6005, "6005 OR", "6005 IR". */
+const buildSkuMatchCandidates = (line) => {
+  const tokens = [];
+  const seen = new Set();
+  const add = (raw) => {
+    const t = normalizeSkuToken(raw);
+    if (t && !seen.has(t)) {
+      seen.add(t);
+      tokens.push(t);
+    }
+  };
+  const inferred = inferRingSkuFromLine(line);
+  add(inferred);
+  add(line?.sku_guess);
+  const blob = `${line?.sku_guess || ''} ${line?.description || ''}`.toUpperCase();
+  const sizeMatch = blob.match(/\b(\d{3,5})\b/);
+  if (sizeMatch) {
+    const size = sizeMatch[1];
+    if (/\bOR\b|ORPOYO|OUTER|\d{3,5}OR\b/.test(blob) && !/\bIR\b|IRPOYO|INNER|\d{3,5}IR\b/.test(blob)) {
+      add(`OM${size}`);
+      add(`${size}OR`);
+    }
+    if (/\bIR\b|IRPOYO|INNER|\d{3,5}IR\b/.test(blob) && !/\bOR\b|ORPOYO|OUTER|\d{3,5}OR\b/.test(blob)) {
+      add(`IM${size}`);
+      add(`${size}IR`);
+    }
+  }
+  if (inferred?.startsWith('OM')) add(`${inferred.slice(2)}OR`);
+  if (inferred?.startsWith('IM')) add(`${inferred.slice(2)}IR`);
+  return tokens;
+};
+
+const productSkuMatchesCandidate = (productSku, candidate) => {
+  const ps = normalizeSkuToken(productSku);
+  const c = normalizeSkuToken(candidate);
+  if (!ps || !c) return false;
+  if (ps === c) return true;
+  // Avoid matching bare size "6005" to every 6005* SKU (picks wrong ring type).
+  if (/^\d{3,5}$/.test(c)) return false;
+  if (/^\d{3,5}(OR|IR)$/.test(c) && (ps.startsWith('OM') || ps.startsWith('IM'))) return false;
+  if (ps.startsWith(c) || c.startsWith(ps)) return true;
+  return false;
+};
+
+const matchCanonicalRing = (line, products) => {
+  const inferred = inferRingSkuFromLine(line);
+  if (inferred) {
+    const hit = products.find((p) => normalizeSkuToken(p.sku) === inferred);
+    if (hit) return String(hit.id);
+  }
+  const sizeMatch = `${line?.sku_guess || ''} ${line?.description || ''}`.match(/\b(\d{3,5})\b/);
+  const size = sizeMatch ? sizeMatch[1] : '';
+  const ratio = normalizeRatio(line?.packing_ratio);
+  if (size && ratio) {
+    const hits = products.filter((p) => {
+      const sku = normalizeSkuToken(p.sku);
+      const pr = normalizeRatio(p.packing_ratio);
+      return (
+        (sku === `OM${size}` || sku === `IM${size}`) &&
+        pr &&
+        (pr === ratio || pr.startsWith(ratio) || ratio.startsWith(pr))
+      );
+    });
+    if (hits.length === 1) return String(hits[0].id);
+  }
+  return '';
+};
+
 const matchProduct = (line, products) => {
   if (!products?.length) return '';
+
+  const canonicalId = matchCanonicalRing(line, products);
+  if (canonicalId) return canonicalId;
+
+  const guess = `${line?.sku_guess || ''} ${line?.description || ''}`.toUpperCase();
+  const compact = guess.replace(/\s+/g, '');
+  const prefersOm = /\bOR\b|ORPOYO|OUTER|\d{3,5}OR\b/.test(guess) || compact.startsWith('OM');
+  const prefersIm = /\bIR\b|IRPOYO|INNER|\d{3,5}IR\b/.test(guess) || compact.startsWith('IM');
+  const ringTyped = prefersOm || prefersIm;
+
+  const skuCandidates = buildSkuMatchCandidates(line);
+  for (const candidate of skuCandidates) {
+    const exactSku = products.find((p) => productSkuMatchesCandidate(p.sku, candidate));
+    if (exactSku) return String(exactSku.id);
+  }
+
   if (line?.product_id) {
     const byId = products.find((p) => String(p.id) === String(line.product_id));
-    if (byId) return String(byId.id);
+    const sku = normalizeSkuToken(byId?.sku);
+    const isAlias = /^\d{3,5}(OR|IR)$/.test(sku);
+    if (byId && !isAlias) return String(byId.id);
   }
-  const partNo = String(line?.part_number || '').trim();
-  if (partNo) {
-    const byPart = products.find((p) => String(p.part_number || '').trim() === partNo);
-    if (byPart) return String(byPart.id);
-  }
-  const guess = `${line?.sku_guess || ''} ${line?.product_name || ''} ${line?.description || ''}`.toUpperCase();
-  if (!guess.trim()) return '';
-  const compact = guess.replace(/\s+/g, '');
-  const digits = [...new Set(guess.match(/\b\d{3,5}\b/g) || [])];
-  const prefersOm = /\bOR\b|ORPOYO|OUTER/.test(guess) || compact.includes('ORPOYO');
-  const prefersIm = /\bIR\b|INNER/.test(guess) || compact.includes('IRPOYO');
 
-  const exact = products.find((p) => {
-    const sku = String(p.sku || '').toUpperCase();
-    const name = String(p.name || '').toUpperCase();
-    return (sku && guess.includes(sku)) || (name && guess.includes(name));
+  if (!guess.trim()) return '';
+  const digits = [...new Set(guess.match(/\b\d{3,5}\b/g) || [])];
+
+  const sorted = [...products].sort(
+    (a, b) => normalizeSkuToken(b.sku).length - normalizeSkuToken(a.sku).length,
+  );
+  const exact = sorted.find((p) => {
+    const sku = normalizeSkuToken(p.sku);
+    const name = String(p.name || '').toUpperCase().trim();
+    if (/^\d{3,5}(OR|IR)$/.test(sku) && products.some((x) => /^(OM|IM)\d/.test(normalizeSkuToken(x.sku)))) {
+      return false;
+    }
+    if (sku.length >= 5 && guess.includes(sku)) return true;
+    if (name.length >= 6 && guess.includes(name)) return true;
+    return false;
   });
   if (exact) return String(exact.id);
 
   let best = null;
   let bestScore = 0;
+  const lineRatio = normalizeRatio(line?.packing_ratio);
   products.forEach((p) => {
-    const sku = String(p.sku || '').toUpperCase();
+    const sku = normalizeSkuToken(p.sku);
     const name = String(p.name || '').toUpperCase();
     const blob = `${sku}${name}`.replace(/\s+/g, '');
     let score = 0;
     digits.forEach((d) => {
-      if (blob.includes(d)) score += 12;
+      if (blob.includes(d)) score += 8;
     });
-    if (prefersOm && sku.startsWith('OM')) score += 22;
-    if (prefersIm && sku.startsWith('IM')) score += 22;
+    if (prefersOm && sku.startsWith('OM')) score += 36;
+    if (prefersIm && sku.startsWith('IM')) score += 36;
+    if (prefersOm && (sku.endsWith('OR') || name.includes(' OR'))) score += 12;
+    if (prefersIm && (sku.endsWith('IR') || name.includes(' IR'))) score += 12;
+    if (prefersOm && (sku.endsWith('IR') || name.includes(' IR'))) score -= 40;
+    if (prefersIm && (sku.endsWith('OR') || name.includes(' OR'))) score -= 40;
+    const pr = normalizeRatio(p.packing_ratio);
+    if (lineRatio && pr && (pr === lineRatio || pr.startsWith(lineRatio) || lineRatio.startsWith(pr))) {
+      score += 18;
+    }
     if (score > bestScore) {
       bestScore = score;
       best = p;
     }
   });
-  return bestScore >= 12 ? String(best.id) : '';
+  const minScore = ringTyped ? 20 : 12;
+  return bestScore >= minScore ? String(best.id) : '';
 };
 
 const productLabel = (product) => {
@@ -224,11 +352,85 @@ const productLabel = (product) => {
   return `${sku} — ${name}`;
 };
 
+const resolveDocIsPallet = (parsedData, vendors, vendorId) => {
+  if (!parsedData) return false;
+  const effectiveVendorId = vendorId || parsedData.vendor_id;
+  const targetVendor =
+    vendors.find((v) => String(v.id) === String(parsedData.vendor_id)) ||
+    vendors.find((v) => String(v.id) === String(effectiveVendorId)) ||
+    vendors.find(
+      (v) =>
+        (v.code && v.code === parsedData.supplier_key) ||
+        (v.name &&
+          parsedData.supplier_name &&
+          v.name.toLowerCase() === parsedData.supplier_name.toLowerCase())
+    );
+  const formVendor = vendors.find((v) => String(v.id) === String(effectiveVendorId));
+  return (
+    isPalletSupplier(formVendor) ||
+    isPalletSupplier(targetVendor) ||
+    isPalletSupplierBlob(`${parsedData.supplier_key || ''} ${parsedData.supplier_name || ''}`)
+  );
+};
+
+/** Stable pallet vs box for one PDF apply (avoids flip-flop when vendor list re-fetches). */
+const resolveUsePallet = (parsedData, vendors, vendorId) => {
+  if (resolveDocIsPallet(parsedData, vendors, vendorId)) return true;
+  const id = vendorId || parsedData?.vendor_id;
+  if (!id || !vendors.length) return false;
+  const v = vendors.find((x) => String(x.id) === String(id));
+  return isPalletSupplier(v);
+};
+
+const mapParsedLinePacking = (line, usePallet) => {
+  const qty = Number(line.quantity ?? 0);
+  if (isBulkInwardLine(line)) {
+    return {
+      pallet_count: 0,
+      qty_per_pallet: 0,
+      box_count: 0,
+      qty_per_box: 0,
+    };
+  }
+  const rawPkg = Number(line.package_count || 0);
+  const pCount = Number(line.pallet_count || 0);
+  const pQty = Number(line.qty_per_pallet || 0);
+  const bCount = Number(line.box_count || 0);
+  const bQty = Number(line.qty_per_box || line.box_quantity || 0);
+
+  if (usePallet) {
+    const finalPallets = pCount || bCount || rawPkg;
+    let finalQtyPerPallet = pQty || bQty;
+    if (!finalQtyPerPallet && finalPallets > 0 && qty > 0) {
+      finalQtyPerPallet = qty / finalPallets;
+    }
+    return {
+      pallet_count: finalPallets,
+      qty_per_pallet: finalQtyPerPallet,
+      box_count: 0,
+      qty_per_box: 0,
+    };
+  }
+
+  const finalBoxes = bCount || pCount || rawPkg;
+  let finalQtyPerBox = bQty || pQty;
+  if (!finalQtyPerBox && finalBoxes > 0 && qty > 0) {
+    finalQtyPerBox = qty / finalBoxes;
+  }
+  return {
+    pallet_count: 0,
+    qty_per_pallet: 0,
+    box_count: finalBoxes,
+    qty_per_box: finalQtyPerBox,
+  };
+};
+
 const RingsInwardCreatePage = () => {
   const navigate = useNavigate();
   const { mutateAsync, isPending } = useCreateRingsInward();
   const [parsedData, setParsedData] = useState(null);
   const lastParseKeyRef = useRef(null);
+  const applyingParsedRef = useRef(false);
   const [remarkModalIndex, setRemarkModalIndex] = useState(null);
   const [remarkDraft, setRemarkDraft] = useState('');
   const remarkRevertRef = useRef({ has_remark: 'no', remarks: '' });
@@ -274,38 +476,48 @@ const RingsInwardCreatePage = () => {
     { page_size: 200, vendor_id: vendorId },
     { enabled: !!vendorId, placeholderData: null }
   );
-  const vendor = useMemo(() => vendors.find((v) => v.id === vendorId), [vendors, vendorId]);
+  const vendor = useMemo(
+    () => vendors.find((v) => String(v.id) === String(vendorId)),
+    [vendors, vendorId]
+  );
   const isPalletMode = useMemo(() => isPalletSupplier(vendor), [vendor]);
   const workflowMaster = vendor?.invoice_workflow || 'STANDARD';
   const isDirect = (watch('workflow') || workflowMaster) === 'DIRECT_INVOICE';
 
   const prevVendorRef = useRef(vendorId);
   useEffect(() => {
-    if (prevVendorRef.current && prevVendorRef.current !== vendorId) {
-      const prevV = vendors.find((v) => v.id === prevVendorRef.current);
+    if (applyingParsedRef.current) {
+      prevVendorRef.current = vendorId;
+      return;
+    }
+    if (prevVendorRef.current !== vendorId) {
+      const prevV = prevVendorRef.current
+        ? vendors.find((v) => String(v.id) === String(prevVendorRef.current))
+        : null;
       const wasPallet = isPalletSupplier(prevV);
       const nowPallet = isPalletSupplier(vendor);
-      if (wasPallet !== nowPallet) {
+      if (nowPallet && !wasPallet) {
         const curLines = getValues('lines') || [];
         curLines.forEach((l, idx) => {
-          if (nowPallet) {
-            const bCount = Number(l?.box_count || 0);
-            const bQty = Number(l?.qty_per_box || 0);
-            if (bCount > 0 || bQty > 0) {
-              setValue(`lines.${idx}.pallet_count`, bCount, { shouldDirty: true });
-              setValue(`lines.${idx}.qty_per_pallet`, bQty, { shouldDirty: true });
-              setValue(`lines.${idx}.box_count`, 0, { shouldDirty: true });
-              setValue(`lines.${idx}.qty_per_box`, 0, { shouldDirty: true });
-            }
-          } else {
-            const pCount = Number(l?.pallet_count || 0);
-            const pQty = Number(l?.qty_per_pallet || 0);
-            if (pCount > 0 || pQty > 0) {
-              setValue(`lines.${idx}.box_count`, pCount, { shouldDirty: true });
-              setValue(`lines.${idx}.qty_per_box`, pQty, { shouldDirty: true });
-              setValue(`lines.${idx}.pallet_count`, 0, { shouldDirty: true });
-              setValue(`lines.${idx}.qty_per_pallet`, 0, { shouldDirty: true });
-            }
+          const bCount = Number(l?.box_count || 0);
+          const bQty = Number(l?.qty_per_box || 0);
+          if (bCount > 0 || bQty > 0) {
+            setValue(`lines.${idx}.pallet_count`, bCount, { shouldDirty: true });
+            setValue(`lines.${idx}.qty_per_pallet`, bQty, { shouldDirty: true });
+            setValue(`lines.${idx}.box_count`, 0, { shouldDirty: true });
+            setValue(`lines.${idx}.qty_per_box`, 0, { shouldDirty: true });
+          }
+        });
+      } else if (!nowPallet && wasPallet) {
+        const curLines = getValues('lines') || [];
+        curLines.forEach((l, idx) => {
+          const pCount = Number(l?.pallet_count || 0);
+          const pQty = Number(l?.qty_per_pallet || 0);
+          if (pCount > 0 || pQty > 0) {
+            setValue(`lines.${idx}.box_count`, pCount, { shouldDirty: true });
+            setValue(`lines.${idx}.qty_per_box`, pQty, { shouldDirty: true });
+            setValue(`lines.${idx}.pallet_count`, 0, { shouldDirty: true });
+            setValue(`lines.${idx}.qty_per_pallet`, 0, { shouldDirty: true });
           }
         });
       }
@@ -380,67 +592,37 @@ const RingsInwardCreatePage = () => {
 
   useEffect(() => {
     if (!parsedData) return;
+    const effectiveVendorId =
+      vendorId || getValues('vendor_id') || parsedData.vendor_id || '';
     const parseKey = JSON.stringify({
-      ref: parsedData.reference_document_number || parsedData.invoice_number,
+      source: parsedData.source_files,
       items: parsedData.items,
-      packing_weight: parsedData.packing_weight,
-      reference_date: parsedData.reference_date,
-      lr_date: parsedData.lr_date,
-      lr_number: parsedData.lr_number,
+      ref: parsedData.reference_document_number || parsedData.invoice_number,
+      vendorId: effectiveVendorId,
+      vendorCatalogSize: vendors.length,
     });
     if (lastParseKeyRef.current === parseKey) return;
     lastParseKeyRef.current = parseKey;
 
-    const targetVendor =
-      vendors.find((v) => String(v.id) === String(parsedData.vendor_id)) ||
-      vendors.find(
-        (v) =>
-          (v.code && v.code === parsedData.supplier_key) ||
-          (v.name && parsedData.supplier_name && v.name.toLowerCase() === parsedData.supplier_name.toLowerCase())
-      );
-    const docIsPallet =
-      isPalletSupplier(targetVendor) ||
-      /AGRASEN|FALSAN|UNIQUE|AASHITA/i.test(`${parsedData.supplier_key || ''} ${parsedData.supplier_name || ''}`);
+    const usePallet = resolveUsePallet(parsedData, vendors, effectiveVendorId);
+    const sourceItems = normalizeParsedItemsPacking(parsedData.items || [], usePallet);
 
     const dateStr = parsedData.transaction_date
       ? String(parsedData.transaction_date).slice(0, 10)
       : getValues('supplier_document_date');
-    const mappedLinesRaw = (parsedData.items || []).length
-      ? parsedData.items.map((line) => {
+    const mappedLinesRaw = sourceItems.length
+      ? sourceItems.map((line) => {
           const productId = matchProduct(line, productOptions);
           const product = productOptions.find((p) => String(p.id) === String(productId));
           const qty = Number(line.quantity ?? 0);
-          const rawPkg = Number(line.package_count || 0);
-          const pCount = Number(line.pallet_count || 0);
-          const pQty = Number(line.qty_per_pallet || 0);
-          const bCount = Number(line.box_count || 0);
-          const bQty = Number(line.qty_per_box || line.box_quantity || 0);
-
-          let finalPallets = 0;
-          let finalQtyPerPallet = 0;
-          let finalBoxes = 0;
-          let finalQtyPerBox = 0;
-
-          if (docIsPallet) {
-            finalPallets = pCount || bCount || rawPkg;
-            finalQtyPerPallet = pQty || bQty;
-            if (!finalQtyPerPallet && finalPallets > 0 && qty > 0) {
-              finalQtyPerPallet = qty / finalPallets;
-            }
-          } else {
-            finalBoxes = bCount || pCount || rawPkg;
-            finalQtyPerBox = bQty || pQty;
-            if (!finalQtyPerBox && finalBoxes > 0 && qty > 0) {
-              finalQtyPerBox = qty / finalBoxes;
-            }
-          }
+          const packing = mapParsedLinePacking(line, usePallet);
 
           const calculatedQty =
             qty ||
-            (finalPallets && finalQtyPerPallet
-              ? finalPallets * finalQtyPerPallet
-              : finalBoxes && finalQtyPerBox
-                ? finalBoxes * finalQtyPerBox
+            (packing.pallet_count && packing.qty_per_pallet
+              ? packing.pallet_count * packing.qty_per_pallet
+              : packing.box_count && packing.qty_per_box
+                ? packing.box_count * packing.qty_per_box
                 : 0);
 
           return {
@@ -450,10 +632,7 @@ const RingsInwardCreatePage = () => {
             packing_ratio: line.packing_ratio || product?.packing_ratio || '',
             has_remark: line.remarks ? 'yes' : 'no',
             remarks: line.remarks || '',
-            pallet_count: finalPallets,
-            qty_per_pallet: finalQtyPerPallet,
-            box_count: finalBoxes,
-            qty_per_box: finalQtyPerBox,
+            ...packing,
             quantity: calculatedQty,
             short_quantity: '',
             unit_rate: line.rate ?? line.unit_rate ?? 0,
@@ -485,6 +664,7 @@ const RingsInwardCreatePage = () => {
     const headerLrDate =
       parsedData.lr_date || parsedData.items?.find((line) => line.lr_date)?.lr_date;
 
+    applyingParsedRef.current = true;
     reset({
       ...getValues(),
       vendor_id: (parsedData.vendor_id && String(parsedData.vendor_id)) || getValues('vendor_id'),
@@ -512,16 +692,18 @@ const RingsInwardCreatePage = () => {
     mappedLines.forEach((_, idx) => {
       setValue(`lines.${idx}.short_quantity`, '', { shouldDirty: false });
     });
-  }, [parsedData, productOptions, reset, replace, getValues, setValue]);
+    queueMicrotask(() => {
+      applyingParsedRef.current = false;
+    });
+  }, [parsedData, vendors, vendorId, productOptions, reset, replace, getValues, setValue]);
 
   useEffect(() => {
     if (!parsedData?.items?.length || !productOptions.length) return;
-    const allowed = new Set(productOptions.map((p) => String(p.id)));
     parsedData.items.forEach((src, index) => {
-      const current = getValues(`lines.${index}.product_id`);
-      if (current && allowed.has(String(current))) return;
       const productId = matchProduct(src, productOptions);
       if (!productId) return;
+      const current = getValues(`lines.${index}.product_id`);
+      if (String(current) === String(productId)) return;
       setValue(`lines.${index}.product_id`, productId, { shouldDirty: true });
       const product = productOptions.find((p) => String(p.id) === String(productId));
       if (product?.net_weight != null && product.net_weight !== '') {
@@ -552,6 +734,7 @@ const RingsInwardCreatePage = () => {
   };
 
   const onPalletChange = (index) => {
+    if (applyingParsedRef.current) return;
     const pCount = Number(getValues(`lines.${index}.pallet_count`) || 0);
     const pQty = Number(getValues(`lines.${index}.qty_per_pallet`) || 0);
     if (pCount > 0 || pQty > 0) {
@@ -562,6 +745,8 @@ const RingsInwardCreatePage = () => {
   };
 
   const onBoxChange = (index) => {
+    if (applyingParsedRef.current) return;
+    if (isPalletMode) return;
     const bCount = Number(getValues(`lines.${index}.box_count`) || 0);
     const bQty = Number(getValues(`lines.${index}.qty_per_box`) || 0);
     if (bCount > 0 || bQty > 0) {
@@ -727,10 +912,26 @@ const RingsInwardCreatePage = () => {
     }
   };
 
+  const isPalletModeRef = useRef(isPalletMode);
+  isPalletModeRef.current = isPalletMode;
+
+  const handleParsedDocument = useCallback((data) => {
+    lastParseKeyRef.current = null;
+    setParsedData(data);
+  }, []);
+
+  const getFormPalletMode = useCallback(() => {
+    if (isPalletModeRef.current) return true;
+    const id = getValues('vendor_id');
+    const v = vendors.find((x) => String(x.id) === String(id));
+    return isPalletSupplier(v);
+  }, [getValues, vendors]);
+
   return (
     <InwardDocumentUpload
       multiple
-      onParsed={setParsedData}
+      getFormPalletMode={getFormPalletMode}
+      onParsed={handleParsedDocument}
       render={({ trigger, feedback }) => (
     <div className="space-y-6">
       <PageHeader
@@ -834,7 +1035,7 @@ const RingsInwardCreatePage = () => {
           </Card.Header>
           <Card.Body className="py-2 px-3">
             <div className="overflow-x-auto -mx-1 px-1">
-              <div className="min-w-[125rem] px-1">
+              <div className="min-w-[128rem] px-1">
                 <table className="w-full border-separate border-spacing-y-1.5">
                   <colgroup>
                     <col className="w-[10.5rem]" />
@@ -854,18 +1055,18 @@ const RingsInwardCreatePage = () => {
                       <th className={`${thBase} ${!isPalletMode ? 'bg-amber-50 text-amber-700 font-bold border-t border-l border-amber-200' : 'text-gray-400'}`}>Boxes</th>
                       <th className={`${thBase} ${!isPalletMode ? 'bg-amber-50 text-amber-700 font-bold border-t border-r border-amber-200' : 'text-gray-400'}`}>Qty / Box</th>
                       <th className={thBase}>Short Qty</th>
-                      <th className={thBase}>Qty</th>
+                      <th className={`${thBase} min-w-[7rem]`}>Qty</th>
                       <th className={`${thBase} min-w-[8.5rem] w-36`}>Heat No.</th>
                       <th className={`${thBase} w-[6.5rem]`}>Part No</th>
                       <th className={thBase}>UOM</th>
-                      <th className={thBase}>Rate</th>
-                      <th className={thBase}>GST%</th>
-                      <th className={thBase}>Taxable ₹</th>
-                      <th className={thBase}>Ring Wt</th>
-                      <th className={thBase}>Packing Wt</th>
-                      <th className={thBase}>Gross Wt</th>
-                      <th className={thBase}>Total Wt</th>
-                      <th className={thBase}>Total ₹</th>
+                      <th className={`${thBase} min-w-[5.5rem]`}>Rate</th>
+                      <th className={`${thBase} min-w-[3.5rem]`}>GST%</th>
+                      <th className={`${thBase} min-w-[6.5rem]`}>Taxable ₹</th>
+                      <th className={`${thBase} min-w-[6rem]`}>Ring Wt</th>
+                      <th className={`${thBase} min-w-[6rem]`}>Packing Wt</th>
+                      <th className={`${thBase} min-w-[6rem]`}>Gross Wt</th>
+                      <th className={`${thBase} min-w-[6rem]`}>Total Wt</th>
+                      <th className={`${thBase} min-w-[6.5rem]`}>Total ₹</th>
                       <th className={thBase}>
                         <div className="inline-flex items-center justify-center gap-0.5 mx-auto">
                           <span>Remark</span>
@@ -957,6 +1158,7 @@ const RingsInwardCreatePage = () => {
                             <input
                               type="text"
                               inputMode="decimal"
+                              title={String(watchedLines[index]?.qty_per_pallet ?? '')}
                               className={`${numInputRightClass} ${isPalletMode ? 'border-blue-300 font-medium' : ''}`}
                               {...register(`lines.${index}.qty_per_pallet`, {
                                 onChange: () => onPalletChange(index),
@@ -977,6 +1179,7 @@ const RingsInwardCreatePage = () => {
                             <input
                               type="text"
                               inputMode="decimal"
+                              title={String(watchedLines[index]?.qty_per_box ?? '')}
                               className={`${numInputRightClass} ${!isPalletMode ? 'border-amber-300 font-medium' : ''}`}
                               {...register(`lines.${index}.qty_per_box`, {
                                 onChange: () => onBoxChange(index),
@@ -997,17 +1200,13 @@ const RingsInwardCreatePage = () => {
                               })}
                             />
                           </td>
-                          <td className={tdR}>
+                          <td className={qtyTotalTdClass}>
                             <input
                               type="text"
                               inputMode="decimal"
                               readOnly={packingQty(watchedLines[index] || {}) > 0}
-                              title={
-                                packingQty(watchedLines[index] || {}) > 0
-                                  ? 'Qty = (boxes × qty/box) − short qty'
-                                  : undefined
-                              }
-                              className={`${numInputRightClass}${
+                              title={String(watchedLines[index]?.quantity ?? '')}
+                              className={`${qtyTotalInputClass}${
                                 packingQty(watchedLines[index] || {}) > 0 ? ' bg-gray-50' : ''
                               }`}
                               {...register(`lines.${index}.quantity`)}
@@ -1035,7 +1234,7 @@ const RingsInwardCreatePage = () => {
                           <td className={`${tdBase} text-center text-xs text-gray-600`}>
                             {uom?.code || '—'}
                           </td>
-                          <td className={tdR}>
+                          <td className={rateInputTdClass}>
                             <input
                               key={`${field.id}-unit-rate`}
                               type="text"
@@ -1046,7 +1245,7 @@ const RingsInwardCreatePage = () => {
                               {...register(`lines.${index}.unit_rate`)}
                             />
                           </td>
-                          <td className={tdR}>
+                          <td className={rateInputTdClass}>
                             <input
                               type="text"
                               inputMode="decimal"
@@ -1055,10 +1254,10 @@ const RingsInwardCreatePage = () => {
                               {...register(`lines.${index}.gst_percent`)}
                             />
                           </td>
-                          <td className={`${tdAmount} text-xs text-gray-600`}>
+                          <td className={`${amountDisplayTdClass} text-xs text-gray-600`}>
                             {formatAmount(lineTotals[index]?.taxable ?? 0)}
                           </td>
-                          <td className={tdR}>
+                          <td className={wtInputTdClass}>
                             <input
                               type="text"
                               inputMode="decimal"
@@ -1066,7 +1265,7 @@ const RingsInwardCreatePage = () => {
                               {...register(`lines.${index}.per_ring_weight`)}
                             />
                           </td>
-                          <td className={tdR}>
+                          <td className={wtInputTdClass}>
                             <input
                               key={`${field.id}-packing-wt`}
                               type="text"
@@ -1077,13 +1276,13 @@ const RingsInwardCreatePage = () => {
                               {...register(`lines.${index}.packing_weight`)}
                             />
                           </td>
-                          <td className={`${tdAmount} text-xs font-medium text-gray-800`}>
+                          <td className={`${amountDisplayTdClass} text-xs font-medium text-gray-800`}>
                             {wt?.qty ? formatWt(wt.gross) : '—'}
                           </td>
-                          <td className={`${tdAmount} text-xs font-semibold text-gray-900`}>
+                          <td className={`${amountDisplayTdClass} text-xs font-semibold text-gray-900`}>
                             {wt?.qty ? formatWt(wt.weightTotal) : '—'}
                           </td>
-                          <td className={`${tdAmount} text-sm font-medium text-gray-900`}>
+                          <td className={`${amountDisplayTdClass} text-sm font-medium text-gray-900`}>
                             {formatAmount(lineTotals[index]?.total ?? 0)}
                           </td>
                           <td className={tdBase}>

@@ -292,6 +292,10 @@ class Product(BaseEntity):
     package_tracking_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     package_tracking_value: Mapped[str | None] = mapped_column(String(255), nullable=True)
     packing_ratio: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    packing_weight: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 3),
+        nullable=True,
+    )
 
     is_lot_tracked: Mapped[bool] = mapped_column(
         Boolean,

@@ -2,6 +2,13 @@ import React, { useRef, useState } from 'react';
 import Button from '../../../components/ui/Button';
 import { Upload, CheckCircle2, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { logisticsApi } from '../api/logistics.api';
+import {
+  isPalletSupplierBlob,
+  normalizeParsedItemsPacking,
+} from '../../rings/utils/packaging';
+
+const mergeUsesPallet = (merged) =>
+  isPalletSupplierBlob(`${merged?.supplier_key || ''} ${merged?.supplier_name || ''}`);
 
 const mergeParsed = (prev, next, fileName) => {
   if (!prev) {
@@ -31,6 +38,7 @@ const mergeParsed = (prev, next, fileName) => {
     vendor_id: prev.vendor_id || next.vendor_id,
     supplier_key: prev.supplier_key || next.supplier_key,
     supplier_name: prev.supplier_name || next.supplier_name,
+    supplier_gstin: prev.supplier_gstin || next.supplier_gstin,
     transporter_name: prev.transporter_name || next.transporter_name,
     vehicle_number: prev.vehicle_number || next.vehicle_number,
     lr_number: prev.lr_number || next.lr_number,
@@ -45,7 +53,14 @@ const mergeParsed = (prev, next, fileName) => {
   };
 };
 
-const InwardDocumentUpload = ({ onParsed, render, multiple = false }) => {
+const finalizeMergedParse = (merged, formPalletMode = false) => {
+  if (!merged?.items?.length) return merged;
+  const usePallet = formPalletMode || mergeUsesPallet(merged);
+  if (!usePallet) return merged;
+  return { ...merged, items: normalizeParsedItemsPacking(merged.items, true) };
+};
+
+const InwardDocumentUpload = ({ onParsed, render, multiple = false, getFormPalletMode }) => {
   const inputRef = useRef(null);
   const [isParsing, setIsParsing] = useState(false);
   const [error, setError] = useState(null);
@@ -66,6 +81,7 @@ const InwardDocumentUpload = ({ onParsed, render, multiple = false }) => {
         merged = mergeParsed(merged, data, file.name);
         labels.push(file.name);
       }
+      merged = finalizeMergedParse(merged, getFormPalletMode?.() === true);
       setLastParse(merged);
       setFileLabels(labels);
       setShowMapping(false);

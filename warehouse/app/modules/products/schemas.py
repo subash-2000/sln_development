@@ -125,6 +125,9 @@ class ProductCreateRequest(BaseModel):
     )
     package_tracking_value: str | None = Field(None, max_length=255)
     packing_ratio: str | None = Field(None, max_length=50, description="Packing mix e.g. 2+1+1")
+    packing_weight: Decimal | None = Field(
+        None, ge=0, description="Default packing weight per unit/pack (kg)"
+    )
     is_lot_tracked: bool = False
     is_serial_tracked: bool = False
     requires_expiry: bool = False
@@ -155,6 +158,7 @@ class ProductCreateRequest(BaseModel):
         "package_tracking_type",
         "package_tracking_value",
         "packing_ratio",
+        "packing_weight",
         mode="before",
     )
     @classmethod
@@ -183,6 +187,7 @@ class ProductUpdateRequest(BaseModel):
     package_tracking_type: str | None = Field(None, max_length=50)
     package_tracking_value: str | None = Field(None, max_length=255)
     packing_ratio: str | None = Field(None, max_length=50)
+    packing_weight: Decimal | None = Field(None, ge=0)
     is_lot_tracked: bool | None = None
     is_serial_tracked: bool | None = None
     requires_expiry: bool | None = None
@@ -213,6 +218,7 @@ class ProductUpdateRequest(BaseModel):
         "package_tracking_type",
         "package_tracking_value",
         "packing_ratio",
+        "packing_weight",
         mode="before",
     )
     @classmethod
@@ -249,6 +255,7 @@ class ProductResponse(BaseModel):
     package_tracking_type: str | None = None
     package_tracking_value: str | None = None
     packing_ratio: str | None = None
+    packing_weight: Decimal | None = None
     is_lot_tracked: bool
     is_serial_tracked: bool
     requires_expiry: bool

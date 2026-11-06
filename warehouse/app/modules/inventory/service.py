@@ -8,8 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import get_audit_names, log_audit
 from app.core.constants import (
     AuditAction,
+    EntityStatus,
     LocationType,
     MoveState,
+    StorageType,
     TransactionStatus,
     TransactionType,
 )
@@ -101,27 +103,45 @@ class InventoryService:
         code: str,
         name: str,
     ) -> Location:
-        """Helper to find or provision virtual supplier/customer/inventory loss location."""
-        stmt = select(Location).where(
-            Location.company_id == company_id,
-            Location.warehouse_id == warehouse_id,
-            Location.location_type == loc_type.value,
-        )
-        result = await self.db.execute(stmt)
-        loc = result.scalars().first()
-        if not loc:
-            loc = Location(
-                company_id=company_id,
-                warehouse_id=warehouse_id,
-                code=code,
-                name=name,
-                location_type=loc_type.value,
-                path=f"/{code}",
-                allow_mixed_vendors=True,
-                allow_mixed_products=True,
+        """Find or provision virtual supplier/customer/inventory loss location."""
+        code_clean = code.strip().upper()
+        by_code = await self.db.execute(
+            select(Location).where(
+                Location.company_id == company_id,
+                Location.warehouse_id == warehouse_id,
+                Location.code == code_clean,
             )
-            self.db.add(loc)
-            await self.db.flush()
+        )
+        loc = by_code.scalars().first()
+        if loc:
+            return loc
+
+        by_type = await self.db.execute(
+            select(Location).where(
+                Location.company_id == company_id,
+                Location.warehouse_id == warehouse_id,
+                Location.location_type == loc_type.value,
+            )
+        )
+        loc = by_type.scalars().first()
+        if loc:
+            return loc
+
+        loc = Location(
+            company_id=company_id,
+            warehouse_id=warehouse_id,
+            code=code_clean,
+            name=name,
+            location_type=loc_type.value,
+            storage_type=StorageType.BIN.value,
+            path=f"/{code_clean}",
+            status=EntityStatus.ACTIVE.value,
+            is_active=True,
+            allow_mixed_vendors=True,
+            allow_mixed_products=True,
+        )
+        self.db.add(loc)
+        await self.db.flush()
         return loc
 
     async def _validate_vendor_segregation(

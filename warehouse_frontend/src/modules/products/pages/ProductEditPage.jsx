@@ -35,6 +35,10 @@ const ProductEditPage = () => {
           package_tracking_type: data.package_tracking_type || null,
           package_tracking_value: data.package_tracking_value?.trim() || null,
           packing_ratio: data.packing_ratio?.trim() || null,
+          packing_weight:
+            data.packing_weight === '' || data.packing_weight == null
+              ? null
+              : Number(data.packing_weight),
           is_lot_tracked:
             data.is_lot_tracked
             || Boolean(

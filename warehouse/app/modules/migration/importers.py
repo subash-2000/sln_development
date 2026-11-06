@@ -177,6 +177,7 @@ async def import_products(
             ).scalar_one_or_none()
             weight = cell_decimal(data.get("net_weight"))
             gross = cell_decimal(data.get("gross_weight"))
+            pack_wt = cell_decimal(data.get("packing_weight"))
             hsn = cell_str(data.get("hsn_code"))
             desc = cell_str(data.get("description"))
             part_no = (cell_str(data.get("part_number")) or "")[:100] or None
@@ -202,6 +203,8 @@ async def import_products(
                     existing.net_weight = weight
                 if gross is not None:
                     existing.gross_weight = gross
+                if pack_wt is not None:
+                    existing.packing_weight = pack_wt
                 if batch:
                     existing.batch_number = batch
                 if heat:
@@ -232,6 +235,7 @@ async def import_products(
                         uom_id=(uom or default_uom).id,
                         net_weight=weight,
                         gross_weight=gross,
+                        packing_weight=pack_wt,
                         barcode=cell_str(data.get("barcode")),
                         is_lot_tracked=cell_bool(data.get("is_lot_tracked")),
                         batch_number=batch,

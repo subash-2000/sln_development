@@ -20,6 +20,10 @@ export const productSchema = z.object({
   package_tracking_type: z.string().optional().nullable(),
   package_tracking_value: z.string().max(255).optional().nullable(),
   packing_ratio: z.string().max(50).optional().nullable(),
+  packing_weight: z.preprocess(
+    (v) => (v === '' || v === null || v === undefined ? null : Number(v)),
+    z.number().nonnegative().nullable().optional()
+  ),
   is_lot_tracked: z.boolean().default(false),
   is_active: z.boolean().default(true),
   vendor_ids: z.preprocess(

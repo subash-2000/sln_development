@@ -32,6 +32,16 @@ const ProductListPage = () => {
     },
     { key: 'heat_number', label: 'Heat Number', sortable: true, widthClass: 'w-32' },
     { key: 'packing_ratio', label: 'Ratio', sortable: true, widthClass: 'w-24' },
+    {
+      key: 'packing_weight',
+      label: 'Packing Wt',
+      sortable: true,
+      widthClass: 'w-28',
+      render: (value) =>
+        value == null || value === ''
+          ? '-'
+          : Number(value).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 3 }),
+    },
     { key: 'category_name', label: 'Category', sortable: true },
     { key: 'uom_code', label: 'UOM', sortable: true, widthClass: 'w-20' },
     { key: 'hsn_code', label: 'HSN', sortable: true, widthClass: 'w-28' },

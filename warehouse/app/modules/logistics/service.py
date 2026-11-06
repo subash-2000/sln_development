@@ -749,6 +749,11 @@ class LogisticsService:
             is_pallet = (getattr(vendor, "packaging_type", None) == "PALLET") or is_pallet_supplier_blob(f"{vendor.code} {vendor.name}")
         elif supplier_key or parsed.supplier_name:
             is_pallet = is_pallet_supplier_blob(f"{supplier_key or ''} {parsed.supplier_name or ''}")
+        if not is_pallet and (
+            parsed.supplier_key == "AASHITA"
+            or any(s in f"{filename} {parsed.raw_ocr_text}".upper() for s in ("AASHITA", "AGRASEN", "FALSAN", "UNIQUE"))
+        ):
+            is_pallet = True
 
         hsn_updates = 0
         ratio_updates = 0
@@ -766,6 +771,7 @@ class LogisticsService:
                 item.description,
                 supplier_key=supplier_key,
                 vendor_id=vendor.id if vendor else None,
+                packing_ratio=item.packing_ratio,
             )
 
             if product and item.hsn:
@@ -791,6 +797,45 @@ class LogisticsService:
             b_count = int(item.box_count or 0)
             b_qty = float(item.qty_per_box or 0.0)
             raw_pkg = int(package_count or item.package_count or (p_count if is_pallet else b_count) or (b_count if is_pallet else p_count) or 0)
+
+            # Steel balls / NHB: quantity is bulk NOS — never split into fake box/pallet counts.
+            if (supplier_key or "").upper() == "NHB" or (
+                (item.uom or "").upper() == "NOS"
+                and float(item.quantity or 0) >= 1000
+                and not item.packing_detail
+            ):
+                enriched_items.append(
+                    InwardParseLineItem(
+                        description=item.description,
+                        quantity=item.quantity,
+                        sku_guess=item.sku_guess,
+                        product_id=product.id if product else None,
+                        product_name=product.name if product else None,
+                        uom_id=uom_id,
+                        uom_code=uom_code,
+                        hsn=item.hsn,
+                        rate=item.rate,
+                        lot_number=item.lot_number,
+                        heat_number=item.lot_number,
+                        part_number=part_number,
+                        package_count=None,
+                        packing_ratio=packing_ratio,
+                        packing_detail=item.packing_detail,
+                        box_count=0,
+                        qty_per_box=0.0,
+                        pallet_count=0,
+                        qty_per_pallet=0.0,
+                        packing_weight=float(item.packing_weight or 0) if item.packing_weight else None,
+                        challan_number=item.challan_number,
+                        reference_number=item.reference_number,
+                        reference_date=item.reference_date,
+                        lr_number=item.lr_number,
+                        lr_date=item.lr_date,
+                        vehicle_number=item.vehicle_number,
+                        matched=product is not None,
+                    )
+                )
+                continue
 
             if is_pallet:
                 final_pallet_count = p_count or b_count or raw_pkg

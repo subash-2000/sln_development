@@ -390,6 +390,7 @@ class ProductService:
             package_tracking_type=req.package_tracking_type,
             package_tracking_value=_strip_optional(req.package_tracking_value),
             packing_ratio=_strip_optional(req.packing_ratio),
+            packing_weight=req.packing_weight,
             is_lot_tracked=req.is_lot_tracked
             or bool(
                 req.batch_number
@@ -483,6 +484,8 @@ class ProductService:
             product.package_tracking_value = _strip_optional(req.package_tracking_value)
         if req.packing_ratio is not None:
             product.packing_ratio = _strip_optional(req.packing_ratio)
+        if req.packing_weight is not None:
+            product.packing_weight = req.packing_weight
         if req.is_lot_tracked is not None:
             product.is_lot_tracked = req.is_lot_tracked
         elif any(
@@ -688,6 +691,7 @@ class ProductService:
             package_tracking_type=product.package_tracking_type,
             package_tracking_value=product.package_tracking_value,
             packing_ratio=product.packing_ratio,
+            packing_weight=product.packing_weight,
             is_lot_tracked=product.is_lot_tracked,
             is_serial_tracked=product.is_serial_tracked,
             requires_expiry=product.requires_expiry,
