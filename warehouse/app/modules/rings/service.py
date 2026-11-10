@@ -337,6 +337,48 @@ class RingsService:
             ring_mass += ring_weight_total(qty, ring_wt)
         return built, ring_mass
 
+    async def _reserve_pick_lines(
+        self,
+        lines: list[RingsDocumentLine],
+        *,
+        company_id: uuid.UUID,
+        warehouse_id: uuid.UUID,
+        vendor: Vendor | None,
+        exclude_pick_id: uuid.UUID | None = None,
+    ) -> None:
+        requested: dict[tuple, Decimal] = {}
+        for line in lines:
+            line_vendor = line.vendor_id or (vendor.id if vendor else None)
+            if not line_vendor:
+                raise ValidationException(f"Supplier is required for heat {line.heat_number}")
+            key = (line_vendor, line.product_id, line.heat_number)
+            requested[key] = requested.get(key, Decimal("0")) + line.quantity
+
+        reserved = await self.repo.draft_pick_qty_by_heat(
+            company_id, exclude_pick_id=exclude_pick_id
+        )
+        for line in lines:
+            line_vendor = line.vendor_id or (vendor.id if vendor else None)
+            quant = await self.repo.find_heat_quant(
+                company_id=company_id,
+                warehouse_id=warehouse_id,
+                vendor_id=line_vendor,
+                product_id=line.product_id,
+                heat_number=line.heat_number,
+            )
+            held = reserved.get((line_vendor, line.product_id, line.heat_number.strip()), Decimal("0"))
+            on_hand = quant.quantity_available if quant else Decimal("0")
+            available = on_hand - held
+            need = requested[(line_vendor, line.product_id, line.heat_number)]
+            if available < need:
+                raise ConflictException(
+                    f"Insufficient stock for heat {line.heat_number}. "
+                    f"Requested {need}, available {available}",
+                    error_code="INSUFFICIENT_STOCK",
+                )
+            if quant:
+                line.location_id = quant.location_id
+
     async def create_inward(
         self, payload: RingsInwardCreate, company_id: uuid.UUID, user_id: uuid.UUID
     ) -> RingsDocumentResponse:
@@ -484,36 +526,12 @@ class RingsService:
         lines, ring_mass = await self._build_lines(payload.lines, company_id, location.id, vendor=vendor)
         packing = payload.packing_weight or sum((line.packing_weight or Decimal("0") for line in lines), Decimal("0"))
 
-        requested: dict[tuple, Decimal] = {}
-        for line in lines:
-            line_vendor = line.vendor_id or (vendor.id if vendor else None)
-            key = (line_vendor, line.product_id, line.heat_number)
-            requested[key] = requested.get(key, Decimal("0")) + line.quantity
-
-        reserved = await self.repo.draft_pick_qty_by_heat(company_id)
-        for line in lines:
-            line_vendor = line.vendor_id or (vendor.id if vendor else None)
-            if not line_vendor:
-                raise ValidationException(f"Supplier is required for heat {line.heat_number}")
-            quant = await self.repo.find_heat_quant(
-                company_id=company_id,
-                warehouse_id=payload.warehouse_id,
-                vendor_id=line_vendor,
-                product_id=line.product_id,
-                heat_number=line.heat_number,
-            )
-            held = reserved.get((line_vendor, line.product_id, line.heat_number.strip()), Decimal("0"))
-            on_hand = quant.quantity_available if quant else Decimal("0")
-            available = on_hand - held
-            need = requested[(line_vendor, line.product_id, line.heat_number)]
-            if available < need:
-                raise ConflictException(
-                    f"Insufficient stock for heat {line.heat_number}. "
-                    f"Requested {need}, available {available}",
-                    error_code="INSUFFICIENT_STOCK",
-                )
-            if quant:
-                line.location_id = quant.location_id
+        await self._reserve_pick_lines(
+            lines,
+            company_id=company_id,
+            warehouse_id=payload.warehouse_id,
+            vendor=vendor,
+        )
 
         first = lines[0]
         invoice_no = (
@@ -549,6 +567,211 @@ class RingsService:
         await self.db.commit()
         saved = await self.repo.get_by_id(doc.id, company_id)
         return self._serialize(saved)
+
+    async def update_pick(
+        self,
+        pick_id: uuid.UUID,
+        payload: RingsPickCreate,
+        company_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> RingsDocumentResponse:
+        pick = await self.repo.get_by_id(pick_id, company_id)
+        if not pick or pick.document_type != RingsDocumentType.PICK.value:
+            raise NotFoundException("Pick slip not found")
+        if pick.status != RingsDocumentStatus.DRAFT.value:
+            raise ConflictException("Only draft pick slips can be edited")
+
+        first_line_vendor = payload.lines[0].vendor_id if payload.lines else None
+        primary_vendor_id = payload.vendor_id or first_line_vendor
+        vendor = await self._get_vendor(primary_vendor_id, company_id) if primary_vendor_id else None
+
+        workflow = payload.workflow or pick.workflow
+        if not workflow:
+            workflow = InvoiceWorkflow.JOB_WORK.value
+
+        location = await self._default_location(payload.warehouse_id, company_id)
+        lines, ring_mass = await self._build_lines(payload.lines, company_id, location.id, vendor=vendor)
+        packing = payload.packing_weight or sum((line.packing_weight or Decimal("0") for line in lines), Decimal("0"))
+
+        await self._reserve_pick_lines(
+            lines,
+            company_id=company_id,
+            warehouse_id=payload.warehouse_id,
+            vendor=vendor,
+            exclude_pick_id=pick_id,
+        )
+
+        first = lines[0]
+        invoice_no = (
+            (payload.supplier_document_number or first.source_document_number or first.heat_number or "")
+            .strip()
+        )
+        pick.warehouse_id = payload.warehouse_id
+        pick.vendor_id = primary_vendor_id
+        pick.customer_id = payload.customer_id
+        pick.workflow = workflow
+        pick.supplier_document_number = invoice_no
+        pick.supplier_document_date = payload.supplier_document_date or first.source_document_date
+        pick.received_date = payload.received_date or first.received_date
+        pick.transporter_name = payload.transporter_name or first.transporter_name
+        pick.po_number = payload.po_number
+        pick.packing_weight = packing
+        pick.gross_weight = (ring_mass + packing).quantize(Decimal("0.001"))
+        pick.remarks = payload.remarks
+        pick.updated_by_id = user_id
+        pick.lines.clear()
+        pick.lines = lines
+        await self.db.flush()
+        await log_audit(
+            db=self.db,
+            user_id=user_id,
+            company_id=company_id,
+            action=AuditAction.UPDATE.value,
+            module="rings",
+            entity_name="RingsDocument",
+            entity_id=str(pick.id),
+            new_values={"document_number": pick.document_number, "workflow": workflow},
+        )
+        await self.db.commit()
+        saved = await self.repo.get_by_id(pick.id, company_id)
+        return self._serialize(saved)
+
+    async def delete_pick(
+        self, pick_id: uuid.UUID, company_id: uuid.UUID, user_id: uuid.UUID
+    ) -> None:
+        pick = await self.repo.get_by_id(pick_id, company_id)
+        if not pick or pick.document_type != RingsDocumentType.PICK.value:
+            raise NotFoundException("Pick slip not found")
+        if pick.status == RingsDocumentStatus.CANCELLED.value:
+            raise ConflictException("Pick slip is already cancelled")
+
+        if pick.status == RingsDocumentStatus.POSTED.value:
+            await self._void_posted_pick(pick, company_id, user_id)
+        else:
+            pick.status = RingsDocumentStatus.CANCELLED.value
+            pick.updated_by_id = user_id
+
+        await log_audit(
+            db=self.db,
+            user_id=user_id,
+            company_id=company_id,
+            action=AuditAction.DELETE.value,
+            module="rings",
+            entity_name="RingsDocument",
+            entity_id=str(pick.id),
+            new_values={"document_number": pick.document_number, "status": pick.status},
+        )
+        await self.db.commit()
+
+    async def _void_posted_pick(
+        self, pick: RingsDocument, company_id: uuid.UUID, user_id: uuid.UUID
+    ) -> None:
+        from app.core.constants import MoveState, TransactionStatus, TransactionType
+        from app.models.inventory import StockMove, StockTransaction
+
+        outward = await self.repo.find_by_parent(
+            pick.id, company_id, RingsDocumentType.OUTWARD.value
+        )
+        location = await self._default_location(pick.warehouse_id, company_id)
+        trx_number = await SequenceGenerator.get_next_number(
+            self.db, document_type="RAD", company_id=company_id
+        )
+        stock_trx = StockTransaction(
+            company_id=company_id,
+            warehouse_id=pick.warehouse_id,
+            transaction_number=trx_number,
+            transaction_type=TransactionType.ADJUSTMENT.value,
+            status=TransactionStatus.COMPLETED.value,
+            reference_document_type="RINGS_PICK_VOID",
+            reference_document_number=pick.document_number,
+            partner_vendor_id=pick.vendor_id,
+            partner_customer_id=pick.customer_id,
+            remarks=f"Void posted pick {pick.document_number}",
+            confirmed_at=datetime.now(UTC),
+            confirmed_by_id=user_id,
+            created_by_id=user_id,
+        )
+        self.db.add(stock_trx)
+        await self.db.flush()
+
+        for line in pick.lines:
+            line_vendor = line.vendor_id or pick.vendor_id
+            if not line_vendor:
+                raise ValidationException(f"Supplier missing on heat {line.heat_number}")
+            loc_id = line.location_id or location.id
+            quant = await self.repo.find_heat_quant(
+                company_id=company_id,
+                warehouse_id=pick.warehouse_id,
+                vendor_id=line_vendor,
+                product_id=line.product_id,
+                heat_number=line.heat_number,
+                for_update=True,
+            )
+            if not quant:
+                quant = await self.inv_repo.get_quant(
+                    company_id=company_id,
+                    warehouse_id=pick.warehouse_id,
+                    location_id=loc_id,
+                    product_id=line.product_id,
+                    vendor_id=line_vendor,
+                    batch_number=line.heat_number,
+                    for_update=True,
+                )
+            if not quant:
+                raise ConflictException(
+                    f"Cannot void pick: stock quant not found for heat {line.heat_number}"
+                )
+            quant.quantity_on_hand += line.quantity
+            quant.quantity_available += line.quantity
+            quant.last_movement_at = datetime.now(UTC)
+
+            move = StockMove(
+                company_id=company_id,
+                transaction_id=stock_trx.id,
+                product_id=line.product_id,
+                uom_id=line.uom_id,
+                source_location_id=loc_id,
+                destination_location_id=loc_id,
+                quantity=line.quantity,
+                vendor_id=line_vendor,
+                batch_number=line.heat_number,
+                unit_cost=line.unit_rate,
+                state=MoveState.DONE.value,
+                remarks=f"Void pick {pick.document_number} heat {line.heat_number}",
+                created_by_id=user_id,
+            )
+            self.db.add(move)
+            await self.db.flush()
+            running = await self.inv_repo.get_latest_running_balance(
+                company_id=company_id,
+                location_id=loc_id,
+                product_id=line.product_id,
+                vendor_id=line_vendor,
+                batch_number=line.heat_number,
+            )
+            await self.inv_repo.append_ledger_entry(
+                company_id=company_id,
+                warehouse_id=pick.warehouse_id,
+                location_id=loc_id,
+                product_id=line.product_id,
+                uom_id=line.uom_id,
+                transaction_id=stock_trx.id,
+                move_id=move.id,
+                entry_type="IN",
+                quantity_delta=line.quantity,
+                running_balance=running + line.quantity,
+                vendor_id=line_vendor,
+                batch_number=line.heat_number,
+                unit_cost=line.unit_rate,
+                total_value=basic_value(line.quantity, line.unit_rate),
+                reference=f"RINGS_VOID:{pick.document_number}",
+            )
+
+        pick.status = RingsDocumentStatus.CANCELLED.value
+        pick.updated_by_id = user_id
+        if outward:
+            outward.status = RingsDocumentStatus.CANCELLED.value
+            outward.updated_by_id = user_id
 
     async def dispatch_pick(
         self,

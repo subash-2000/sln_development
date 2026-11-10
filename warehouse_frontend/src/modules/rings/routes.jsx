@@ -23,6 +23,7 @@ export const ringsRoutes = [
     children: [
       { index: true, element: <RingsPickPage /> },
       { path: 'new', element: <RingsPickCreatePage /> },
+      { path: ':id/edit', element: <RingsPickCreatePage /> },
       { path: ':id', element: <RingsDocumentDetailPage /> },
     ],
   },

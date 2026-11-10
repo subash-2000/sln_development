@@ -4,11 +4,12 @@ import { useListState } from '../../../hooks/use-list-state';
 import ListPage from '../../../components/tables/ListPage';
 import RowActions from '../../../components/tables/RowActions';
 import { ringsApi } from '../api/rings.api';
-import { useDispatchRingsPick, useRingsDocuments } from '../hooks/use-rings';
+import { useDeleteRingsPick, useDispatchRingsPick, useRingsDocuments } from '../hooks/use-rings';
 
 const RingsPickPage = () => {
   const navigate = useNavigate();
   const { mutateAsync: dispatchPick, isPending } = useDispatchRingsPick();
+  const { mutateAsync: deletePick, isPending: isDeleting } = useDeleteRingsPick();
   const initialColumns = [
     { key: 'document_number', label: 'Pick No', sortable: true },
     { key: 'workflow', label: 'Workflow' },
@@ -50,6 +51,20 @@ const RingsPickPage = () => {
     }
   };
 
+  const handleDelete = async (row) => {
+    const message =
+    row.status === 'POSTED'
+      ? `Delete posted pick ${row.document_number}? Stock will be returned to the warehouse and the slip will be cancelled.`
+      : `Delete pick slip ${row.document_number}?`;
+    if (!window.confirm(message)) return;
+    try {
+      await deletePick(row.id);
+      refetch();
+    } catch (err) {
+      window.alert(err.response?.data?.message || err.message);
+    }
+  };
+
   return (
     <ListPage
       title="Picking List"
@@ -78,6 +93,19 @@ const RingsPickPage = () => {
         <RowActions
           actions={[
             { type: 'view', label: 'View', onClick: () => navigate(`/rings/picks/${row.id}`) },
+            {
+              type: 'edit',
+              label: 'Edit',
+              onClick: () => navigate(`/rings/picks/${row.id}/edit`),
+              hidden: row.status !== 'DRAFT',
+            },
+            {
+              type: 'delete',
+              label: isDeleting ? 'Deleting…' : 'Delete',
+              onClick: () => handleDelete(row),
+              variant: 'danger',
+              hidden: row.status === 'CANCELLED',
+            },
             {
               type: 'custom',
               label: 'Download pick slip Excel',

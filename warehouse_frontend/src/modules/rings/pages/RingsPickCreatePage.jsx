@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Trash2, Search } from 'lucide-react';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
+import { useMatch, useNavigate } from 'react-router-dom';
 import PageHeader from '../../../components/common/PageHeader';
 import Button from '../../../components/ui/Button';
 import Card from '../../../components/ui/Card';
@@ -10,7 +10,7 @@ import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useCustomers } from '../../customers/hooks/use-customers';
 import { useVendors } from '../../vendors/hooks/use-vendors';
 import { useWarehouses } from '../../warehouses/hooks/use-warehouses';
-import { useCreateRingsPick, useRingsStock } from '../hooks/use-rings';
+import { useCreateRingsPick, useRingsDocument, useRingsStock, useUpdateRingsPick } from '../hooks/use-rings';
 
 const selectTriggerClass = 'max-w-none h-9 px-2 rounded-md';
 const noSpinnerClass =
@@ -87,11 +87,18 @@ const lotId = (row) =>
 
 const RingsPickCreatePage = () => {
   const navigate = useNavigate();
-  const { mutateAsync, isPending } = useCreateRingsPick();
+  const editMatch = useMatch('/rings/picks/:id/edit');
+  const pickId = editMatch?.params?.id;
+  const isEdit = Boolean(pickId);
+  const { data: existingPick, isLoading: isPickLoading, error: pickError } = useRingsDocument(pickId);
+  const { mutateAsync: createPick, isPending: isCreating } = useCreateRingsPick();
+  const { mutateAsync: updatePick, isPending: isUpdating } = useUpdateRingsPick();
+  const isPending = isCreating || isUpdating;
+  const hydratedRef = useRef(false);
   const { data: warehousesData } = useWarehouses();
   const { data: vendorsData } = useVendors({ page_size: 200 });
   const { data: customersData } = useCustomers({ page_size: 200, is_buyer: true, status: 'ACTIVE' });
-  const { register, control, handleSubmit, watch, setValue, getValues } = useForm({
+  const { register, control, handleSubmit, watch, setValue, getValues, reset } = useForm({
     defaultValues: {
       warehouse_id: '',
       vendor_id: '',
@@ -111,6 +118,46 @@ const RingsPickCreatePage = () => {
 
   const [stockSupplierFilter, setStockSupplierFilter] = useState('ALL');
   const [stockSearch, setStockSearch] = useState('');
+
+  useEffect(() => {
+    if (!isEdit || !existingPick || hydratedRef.current) return;
+    if (existingPick.status !== 'DRAFT') {
+      window.alert('Only draft pick slips can be edited.');
+      navigate(`/rings/picks/${pickId}`);
+      return;
+    }
+    const mappedLines = (existingPick.lines || []).map((line) => ({
+      vendor_id: line.vendor_id || existingPick.vendor_id || '',
+      vendor_name: line.vendor_name || existingPick.vendor_name || '',
+      product_id: line.product_id || '',
+      lot_id: lotId({
+        vendor_id: line.vendor_id || existingPick.vendor_id,
+        product_id: line.product_id,
+        heat_number: line.heat_number,
+        invoice_number: line.source_document_number,
+      }),
+      invoice_number: line.source_document_number || '',
+      invoice_date: line.source_document_date || '',
+      transporter_name: line.transporter_name || existingPick.transporter_name || '',
+      received_date: line.received_date || existingPick.received_date || '',
+      pallet_count: line.pallet_count ?? '',
+      qty_per_pallet: line.qty_per_pallet ?? '',
+      quantity: line.quantity ?? '',
+      heat_number: line.heat_number || '',
+      per_ring_weight: line.per_ring_weight ?? '',
+      packing_weight: line.packing_weight ?? '',
+      unit_rate: line.unit_rate ?? '',
+    }));
+    reset({
+      warehouse_id: existingPick.warehouse_id || '',
+      vendor_id: existingPick.vendor_id || '',
+      workflow: existingPick.workflow || 'JOB_WORK',
+      customer_id: existingPick.customer_id || '',
+      po_number: existingPick.po_number || '',
+      lines: mappedLines.length ? mappedLines : [emptyLine()],
+    });
+    hydratedRef.current = true;
+  }, [isEdit, existingPick, pickId, navigate, reset]);
 
   // Fetch stock across all suppliers for the selected warehouse
   const { data: stock, isLoading: isStockLoading } = useRingsStock({ warehouse_id: warehouseId });
@@ -206,6 +253,20 @@ const RingsPickCreatePage = () => {
       });
   };
 
+  const editReserveBonus = (lotKey) => {
+    if (!isEdit || !existingPick?.lines?.length) return 0;
+    return existingPick.lines.reduce((sum, line) => {
+      const lineKey = lotId({
+        vendor_id: line.vendor_id || existingPick.vendor_id,
+        product_id: line.product_id,
+        heat_number: line.heat_number,
+        invoice_number: line.source_document_number,
+      });
+      if (lineKey !== lotKey) return sum;
+      return sum + Number(line.quantity || 0);
+    }, 0);
+  };
+
   const remainingForLot = (lot, exceptIndex) => {
     const available = Number(lot?.quantity_available || 0);
     const key = lotId({ ...lot, invoice_number: lot.dc_number || lot.invoice_number });
@@ -214,7 +275,7 @@ const RingsPickCreatePage = () => {
       if (lotId(line) !== key) return sum;
       return sum + Number(line.quantity || 0);
     }, 0);
-    return Math.max(0, available - used);
+    return Math.max(0, available - used + editReserveBonus(key));
   };
 
   const invoicesForProduct = (productId, exceptIndex, lineVendorId) => {
@@ -423,7 +484,7 @@ const RingsPickCreatePage = () => {
         }
       }
 
-      await mutateAsync({
+      const payload = {
         warehouse_id: form.warehouse_id,
         vendor_id: primaryVendorId,
         workflow: workflow && workflow !== 'STANDARD' ? workflow : 'JOB_WORK',
@@ -454,7 +515,13 @@ const RingsPickCreatePage = () => {
             packing_weight: Number(line.packing_weight || 0),
           };
         }),
-      });
+      };
+
+      if (isEdit) {
+        await updatePick({ id: pickId, data: payload });
+      } else {
+        await createPick(payload);
+      }
 
       navigate('/rings/picks');
     } catch (err) {
@@ -465,12 +532,26 @@ const RingsPickCreatePage = () => {
     }
   };
 
+  if (isEdit && isPickLoading) {
+    return <div className="p-6 text-sm text-gray-500">Loading pick slip…</div>;
+  }
+  if (isEdit && pickError) {
+    return (
+      <div className="p-6 text-sm text-red-600">
+        Could not load pick slip: {pickError.message || 'Unknown error'}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
-        title="New Pick Slip"
+        title={isEdit ? `Edit Pick Slip ${existingPick?.document_number || ''}` : 'New Pick Slip'}
         description="Select product, then the inward invoice. Quantity loads in full and can be split across lines up to that invoice remaining qty."
-        breadcrumbs={[{ label: 'Picking List', to: '/rings/picks' }, { label: 'New' }]}
+        breadcrumbs={[
+          { label: 'Picking List', to: '/rings/picks' },
+          { label: isEdit ? (existingPick?.document_number || 'Edit') : 'New' },
+        ]}
       />
       <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-6">
         <Card>

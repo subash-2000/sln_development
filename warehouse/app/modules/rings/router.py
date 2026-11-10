@@ -68,6 +68,31 @@ async def create_rings_pick(
     return success_response(data=result.model_dump(mode="json"), message="Pick slip saved")
 
 
+@router.put("/picks/{pick_id}", response_model=StandardResponse[RingsDocumentResponse])
+async def update_rings_pick(
+    pick_id: uuid.UUID,
+    payload: RingsPickCreate,
+    context: TenantContext = Depends(get_current_tenant_context),
+    current_user: User = Depends(require_any_permission("logistics.outward", "inventory.write")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = RingsService(db)
+    result = await service.update_pick(pick_id, payload, _company(context), current_user.id)
+    return success_response(data=result.model_dump(mode="json"), message="Pick slip updated")
+
+
+@router.delete("/picks/{pick_id}", response_model=StandardResponse[None])
+async def delete_rings_pick(
+    pick_id: uuid.UUID,
+    context: TenantContext = Depends(get_current_tenant_context),
+    current_user: User = Depends(require_any_permission("logistics.outward", "inventory.write")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = RingsService(db)
+    await service.delete_pick(pick_id, _company(context), current_user.id)
+    return success_response(data=None, message="Pick slip deleted")
+
+
 @router.post("/picks/{pick_id}/dispatch", response_model=StandardResponse[RingsDocumentResponse])
 async def dispatch_rings_pick(
     pick_id: uuid.UUID,

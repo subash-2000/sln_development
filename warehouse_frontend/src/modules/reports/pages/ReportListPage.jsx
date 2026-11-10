@@ -58,6 +58,14 @@ const primaryReports = [
     badge: 'Supplier Audit',
   },
   {
+    to: '/rings/sales',
+    title: 'Sales Report',
+    description: 'Supplier-wise rings sales statement, outward challans, and buyer dispatch summary with PDF export.',
+    icon: BarChart3,
+    color: 'bg-indigo-600 text-white',
+    badge: 'Operations',
+  },
+  {
     to: '/reports/invoices',
     title: 'Invoice & Sales Reports',
     description: 'GST tax invoices, customer billing summaries, CGST/SGST/IGST breakdown, and payment status.',

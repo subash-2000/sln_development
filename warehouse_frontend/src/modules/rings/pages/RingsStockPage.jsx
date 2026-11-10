@@ -17,7 +17,7 @@ const RingsStockPage = () => {
     <div className="space-y-6">
       <PageHeader
         title="Stock Closing"
-        description="Balances are tracked by supplier + product type + heat number. Closing = opening + inward − outward."
+        description="Balances by supplier and product type. Closing = opening + inward − outward."
         breadcrumbs={[{ label: 'Dashboard', to: '/dashboard' }, { label: 'Operations' }, { label: 'Stock Closing' }]}
       />
       <Card>
@@ -27,7 +27,7 @@ const RingsStockPage = () => {
               {error.message} <button type="button" className="underline" onClick={() => refetch()}>Retry</button>
             </p>
           )}
-          <p className="text-sm font-medium mb-2">Current heat-wise stock</p>
+          <p className="text-sm font-medium mb-2">Current stock</p>
           {isLoading ? (
             <p className="text-sm text-gray-500">Loading…</p>
           ) : (
@@ -36,7 +36,6 @@ const RingsStockPage = () => {
                 <tr className="text-left text-gray-500 border-b">
                   <th className="py-2">Supplier</th>
                   <th>Type</th>
-                  <th>Heat</th>
                   <th>On hand</th>
                   <th>Available</th>
                   <th>Ring wt</th>
@@ -47,14 +46,13 @@ const RingsStockPage = () => {
                   <tr key={`${row.vendor_id}-${row.product_id}-${row.heat_number}`} className="border-b border-gray-50">
                     <td className="py-2">{row.vendor_name}</td>
                     <td>{row.product_sku}</td>
-                    <td>{row.heat_number}</td>
                     <td>{row.quantity_on_hand}</td>
                     <td>{row.quantity_available}</td>
                     <td>{row.per_ring_weight}</td>
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={6} className="py-6 text-center text-gray-400">No heat-wise stock yet</td></tr>
+                  <tr><td colSpan={5} className="py-6 text-center text-gray-400">No stock yet</td></tr>
                 )}
               </tbody>
             </table>
@@ -73,7 +71,6 @@ const RingsStockPage = () => {
               <tr className="text-left text-gray-500 border-b">
                 <th className="py-2">Supplier</th>
                 <th>Type</th>
-                <th>Heat</th>
                 <th>Opening</th>
                 <th>Inward</th>
                 <th>Outward</th>
@@ -85,7 +82,6 @@ const RingsStockPage = () => {
                 <tr key={`${row.vendor_id}-${row.product_id}-${row.heat_number}`} className="border-b border-gray-50">
                   <td className="py-2">{row.vendor_name}</td>
                   <td>{row.product_sku}</td>
-                  <td>{row.heat_number}</td>
                   <td>{row.opening_qty}</td>
                   <td>{row.inward_qty}</td>
                   <td>{row.outward_qty}</td>
@@ -93,7 +89,7 @@ const RingsStockPage = () => {
                 </tr>
               ))}
               {closeRows.length === 0 && (
-                <tr><td colSpan={7} className="py-6 text-center text-gray-400">No movements on this date</td></tr>
+                <tr><td colSpan={6} className="py-6 text-center text-gray-400">No movements on this date</td></tr>
               )}
             </tbody>
           </table>

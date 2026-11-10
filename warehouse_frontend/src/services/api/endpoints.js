@@ -113,6 +113,7 @@ export const ENDPOINTS = {
     INWARD: '/rings/inward',
     SUPPLIER_TYPES: '/rings/supplier-types',
     PICKS: '/rings/picks',
+    PICK: (id) => `/rings/picks/${id}`,
     DISPATCH: (id) => `/rings/picks/${id}/dispatch`,
     DOCUMENTS: '/rings/documents',
     DOCUMENT: (id) => `/rings/documents/${id}`,

@@ -72,15 +72,12 @@ const menuItems = [
   {
     label: 'Operations',
     items: [
-      { icon: ClipboardList, label: 'Job Work Register', path: '/job-work/register' },
-      { icon: FileText, label: 'Job Work DCS', path: '/job-work/dcs' },
       { icon: ArrowDownLeft, label: 'Inward', path: '/rings/inward' },
       { icon: ArrowUpRight, label: 'Outward', path: '/logistics/outward' },
       { icon: ClipboardList, label: 'Picking List', path: '/rings/picks' },
       { icon: FileText, label: 'Dispatch / Challan', path: '/rings/dispatch' },
       { icon: Truck, label: 'Dispatch Control', path: '/logistics/dispatch' },
       { icon: Boxes, label: 'Stock Closing', path: '/rings/stock' },
-      { icon: BarChart3, label: 'Sales Report', path: '/rings/sales' },
     ]
   },
   {
@@ -109,6 +106,7 @@ const menuItems = [
       { icon: ArrowUpRight, label: 'Outward Reports', path: '/reports/outward' },
       { icon: Boxes, label: 'Daily Stock Reports', path: '/reports/daily-stock' },
       { icon: Building2, label: 'Supplier Reports', path: '/reports/supplier-wise' },
+      { icon: BarChart3, label: 'Sales Report', path: '/rings/sales' },
       { icon: FileSpreadsheet, label: 'Invoice Reports', path: '/reports/invoices' },
       { icon: BarChart3, label: 'All Reports Hub', path: '/reports' },
     ]

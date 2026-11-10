@@ -94,6 +94,8 @@ export const ringsApi = {
   supplierTypes: async (vendorId) =>
     unwrapData(await apiClient.get(ENDPOINTS.RINGS.SUPPLIER_TYPES, { params: { vendor_id: vendorId } })),
   createPick: async (data) => unwrapData(await apiClient.post(ENDPOINTS.RINGS.PICKS, data)),
+  updatePick: async (id, data) => unwrapData(await apiClient.put(ENDPOINTS.RINGS.PICK(id), data)),
+  deletePick: async (id) => unwrapData(await apiClient.delete(ENDPOINTS.RINGS.PICK(id))),
   dispatchPick: async (id, data) => unwrapData(await apiClient.post(ENDPOINTS.RINGS.DISPATCH(id), data || {})),
   stock: async (params) => unwrapData(await apiClient.get(ENDPOINTS.RINGS.STOCK, { params: buildListParams(params) })),
   dayClose: async (params) =>

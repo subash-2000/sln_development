@@ -37,6 +37,36 @@ export const useCreateRingsPick = () => {
   });
 };
 
+export const useUpdateRingsPick = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }) => ringsApi.updatePick(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rings-documents'] });
+      queryClient.invalidateQueries({ queryKey: ['rings-stock'] });
+    },
+  });
+};
+
+export const useDeleteRingsPick = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ringsApi.deletePick,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rings-documents'] });
+      queryClient.invalidateQueries({ queryKey: ['rings-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['rings-sales'] });
+    },
+  });
+};
+
+export const useRingsDocument = (id) =>
+  useQuery({
+    queryKey: ['rings-document', id],
+    queryFn: () => ringsApi.getDocument(id),
+    enabled: !!id,
+  });
+
 export const useDispatchRingsPick = () => {
   const queryClient = useQueryClient();
   return useMutation({

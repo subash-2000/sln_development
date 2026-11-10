@@ -1065,7 +1065,7 @@ const RingsInwardCreatePage = () => {
                       <th className={`${thBase} min-w-[6rem]`}>Ring Wt</th>
                       <th className={`${thBase} min-w-[6rem]`}>Packing Wt</th>
                       <th className={`${thBase} min-w-[6rem]`}>Gross Wt</th>
-                      <th className={`${thBase} min-w-[6rem]`}>Total Wt</th>
+                      <th className={`${thBase} min-w-[6rem]`}>Net Wt</th>
                       <th className={`${thBase} min-w-[6.5rem]`}>Total ₹</th>
                       <th className={thBase}>
                         <div className="inline-flex items-center justify-center gap-0.5 mx-auto">

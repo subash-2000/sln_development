@@ -280,7 +280,7 @@ const RingsDocumentDetailPage = () => {
                       <th className={thR}>Ring Wt</th>
                       <th className={thR}>Packing Wt</th>
                       <th className={thR}>Gross Wt</th>
-                      <th className={thR}>Total Wt</th>
+                      <th className={thR}>Net Wt</th>
                       <th className={thR}>Total ₹</th>
                       <th className={thBase}>Remark</th>
                     </>

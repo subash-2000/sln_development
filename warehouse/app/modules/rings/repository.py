@@ -171,10 +171,30 @@ class RingsRepository:
                 latest[key] = (doc, line)
         return latest
 
+    async def find_by_parent(
+        self,
+        parent_id: uuid.UUID,
+        company_id: uuid.UUID,
+        document_type: str,
+    ) -> RingsDocument | None:
+        stmt = (
+            select(RingsDocument)
+            .options(*self._doc_options())
+            .where(
+                RingsDocument.company_id == company_id,
+                RingsDocument.parent_document_id == parent_id,
+                RingsDocument.document_type == document_type,
+                RingsDocument.status != RingsDocumentStatus.CANCELLED.value,
+            )
+            .limit(1)
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
     async def draft_pick_qty_by_heat(
         self,
         company_id: uuid.UUID,
         vendor_id: uuid.UUID | None = None,
+        exclude_pick_id: uuid.UUID | None = None,
     ) -> dict[tuple, Decimal]:
         """Quantity already sitting on draft pick slips, by vendor + product + heat."""
         vendor_col = func.coalesce(RingsDocumentLine.vendor_id, RingsDocument.vendor_id)
@@ -198,6 +218,8 @@ class RingsRepository:
                 RingsDocumentLine.heat_number,
             )
         )
+        if exclude_pick_id:
+            stmt = stmt.where(RingsDocument.id != exclude_pick_id)
         if vendor_id:
             stmt = stmt.where(vendor_col == vendor_id)
         reserved: dict[tuple, Decimal] = {}
