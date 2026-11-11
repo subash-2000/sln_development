@@ -578,8 +578,38 @@ class RingsService:
         pick = await self.repo.get_by_id(pick_id, company_id)
         if not pick or pick.document_type != RingsDocumentType.PICK.value:
             raise NotFoundException("Pick slip not found")
-        if pick.status != RingsDocumentStatus.DRAFT.value:
-            raise ConflictException("Only draft pick slips can be edited")
+        if pick.status == RingsDocumentStatus.CANCELLED.value:
+            raise ConflictException("Cancelled pick slips cannot be edited")
+        if pick.status not in (
+            RingsDocumentStatus.DRAFT.value,
+            RingsDocumentStatus.POSTED.value,
+        ):
+            raise ConflictException("Pick slip cannot be edited in its current status")
+
+        was_posted = pick.status == RingsDocumentStatus.POSTED.value
+        saved_dispatch = None
+        if was_posted:
+            saved_dispatch = RingsDispatchRequest(
+                packing_weight=pick.packing_weight,
+                supplier_customer_invoice_number=pick.supplier_customer_invoice_number,
+                supplier_customer_invoice_date=pick.supplier_customer_invoice_date,
+                supplier_invoice_value=pick.supplier_invoice_value,
+                po_number=pick.po_number,
+                vehicle_number=pick.vehicle_number,
+                eway_bill_number=pick.eway_bill_number,
+                remarks=pick.remarks,
+            )
+            outward = await self.repo.find_by_parent(
+                pick.id, company_id, RingsDocumentType.OUTWARD.value
+            )
+            await self._reverse_pick_outbound_stock(pick, company_id, user_id)
+            pick.status = RingsDocumentStatus.DRAFT.value
+            pick.stock_transaction_id = None
+            pick.updated_by_id = user_id
+            if outward:
+                outward.status = RingsDocumentStatus.CANCELLED.value
+                outward.updated_by_id = user_id
+            await self.db.flush()
 
         first_line_vendor = payload.lines[0].vendor_id if payload.lines else None
         primary_vendor_id = payload.vendor_id or first_line_vendor
@@ -633,6 +663,8 @@ class RingsService:
             new_values={"document_number": pick.document_number, "workflow": workflow},
         )
         await self.db.commit()
+        if was_posted and saved_dispatch is not None:
+            return await self.dispatch_pick(pick_id, saved_dispatch, company_id, user_id)
         saved = await self.repo.get_by_id(pick.id, company_id)
         return self._serialize(saved)
 
@@ -663,15 +695,12 @@ class RingsService:
         )
         await self.db.commit()
 
-    async def _void_posted_pick(
+    async def _reverse_pick_outbound_stock(
         self, pick: RingsDocument, company_id: uuid.UUID, user_id: uuid.UUID
     ) -> None:
         from app.core.constants import MoveState, TransactionStatus, TransactionType
         from app.models.inventory import StockMove, StockTransaction
 
-        outward = await self.repo.find_by_parent(
-            pick.id, company_id, RingsDocumentType.OUTWARD.value
-        )
         location = await self._default_location(pick.warehouse_id, company_id)
         trx_number = await SequenceGenerator.get_next_number(
             self.db, document_type="RAD", company_id=company_id
@@ -686,7 +715,7 @@ class RingsService:
             reference_document_number=pick.document_number,
             partner_vendor_id=pick.vendor_id,
             partner_customer_id=pick.customer_id,
-            remarks=f"Void posted pick {pick.document_number}",
+            remarks=f"Return stock for pick {pick.document_number} (edit)",
             confirmed_at=datetime.now(UTC),
             confirmed_by_id=user_id,
             created_by_id=user_id,
@@ -719,7 +748,7 @@ class RingsService:
                 )
             if not quant:
                 raise ConflictException(
-                    f"Cannot void pick: stock quant not found for heat {line.heat_number}"
+                    f"Cannot adjust pick: stock quant not found for heat {line.heat_number}"
                 )
             quant.quantity_on_hand += line.quantity
             quant.quantity_available += line.quantity
@@ -737,7 +766,7 @@ class RingsService:
                 batch_number=line.heat_number,
                 unit_cost=line.unit_rate,
                 state=MoveState.DONE.value,
-                remarks=f"Void pick {pick.document_number} heat {line.heat_number}",
+                remarks=f"Return pick {pick.document_number} heat {line.heat_number}",
                 created_by_id=user_id,
             )
             self.db.add(move)
@@ -767,6 +796,13 @@ class RingsService:
                 reference=f"RINGS_VOID:{pick.document_number}",
             )
 
+    async def _void_posted_pick(
+        self, pick: RingsDocument, company_id: uuid.UUID, user_id: uuid.UUID
+    ) -> None:
+        outward = await self.repo.find_by_parent(
+            pick.id, company_id, RingsDocumentType.OUTWARD.value
+        )
+        await self._reverse_pick_outbound_stock(pick, company_id, user_id)
         pick.status = RingsDocumentStatus.CANCELLED.value
         pick.updated_by_id = user_id
         if outward:

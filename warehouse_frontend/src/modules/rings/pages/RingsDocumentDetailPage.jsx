@@ -68,9 +68,9 @@ const packingRatio = (packingDetail) => {
 };
 
 const Field = ({ label, children, className = '' }) => (
-  <div className={className}>
+  <div className={`min-w-0 ${className}`.trim()}>
     <p className="text-xs font-medium text-gray-500">{label}</p>
-    <p className="mt-0.5 text-sm font-medium text-gray-900 break-words">{children ?? '—'}</p>
+    <p className="mt-0.5 text-sm font-medium text-gray-900 break-words leading-snug">{children ?? '—'}</p>
   </div>
 );
 

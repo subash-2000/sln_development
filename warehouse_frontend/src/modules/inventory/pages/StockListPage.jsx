@@ -15,7 +15,7 @@ const StockListPage = () => {
   const initialColumns = [
     { key: 'product_name', label: 'Product', sortable: true },
     { key: 'sku', label: 'SKU', widthClass: 'w-32' },
-    { key: 'batch_number', label: 'Batch/Lot', widthClass: 'w-28' },
+    { key: 'batch_number', label: 'Challan No', widthClass: 'w-28' },
     { key: 'vendor_name', label: 'Supplier' },
     { key: 'warehouse_name', label: 'Warehouse' },
     { key: 'location_name', label: 'Location' },
@@ -74,7 +74,7 @@ const StockListPage = () => {
       canCreate={false}
       customToolbar={
         <StockListToolbar
-          searchPlaceholder="Search batch or reference..."
+          searchPlaceholder="Search challan or reference..."
           searchValue={list.searchInput}
           onSearchChange={list.setSearchInput}
           productId={productId}

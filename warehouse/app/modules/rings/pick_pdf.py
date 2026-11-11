@@ -1,7 +1,8 @@
-"""Picking slip PDF on a real A4 sheet (210 mm x 297 mm). Every pick column is kept."""
+"""Picking slip PDF on A4 landscape — wide table; cells rendered via HTML for clipping."""
 
 from __future__ import annotations
 
+import html
 from decimal import Decimal, InvalidOperation
 
 import fitz
@@ -16,14 +17,14 @@ from app.modules.rings.pick_layout import (
     pick_sheet_date,
 )
 
-# Exact A4 that printers and viewers name "A4": 210 mm x 297 mm.
-PAGE = fitz.paper_rect("a4")
+# Landscape A4: enough width so SKU / challan columns are not scaled into each other.
+PAGE = fitz.paper_rect("a4-l")
 PAGE_W = PAGE.width
 PAGE_H = PAGE.height
 MARGIN = 16
 RIGHT = PAGE_W - MARGIN
 BOTTOM = PAGE_H - MARGIN
-HEADER_SIZE = 6
+HEADER_SIZE = 7
 ROW_H = 22
 SIGN_H = 42
 DATA_SIZE = 7
@@ -56,30 +57,66 @@ RIGHT_HEADERS = {
     "Packing Weight",
     "Gross Weight",
 }
+# Supplier challan / invoice on each line — stand out on the slip.
+HIGHLIGHT_HEADERS = {"Challan NO", "Invoice Number"}
+HIGHLIGHT_FILL = (1.0, 0.97, 0.76)
 # Transporter stays in the receipt header. Buyer, supplier, and SLN challan are line columns.
 TOP_FIELDS = ("TRANSPORTER",)
 
-# Point widths on A4 portrait so an 8pt date and a full heat number stay on one line.
+# Minimum widths (pt). Short-value cols stay tight; name/heat cols get more of the slack.
 COLUMN_MIN = {
-    "TYPES": 22,
+    "TYPES": 38,
     "Challan NO": 28,
-    "Invoice Number": 44,
+    "Invoice Number": 40,
     "DATE": 44,
     "TRANSPORTER": 48,
     "REC.DATE": 44,
     "Total Pallets": 26,
-    "Per Pallet * Qty": 34,
+    "Per Pallet * Qty": 36,
     "Total QTY": 32,
-    "Supplier Name": 42,
-    "Buyer Name": 46,
-    "Sln To Supplier Challan Number": 50,
-    "Supplier To Customer Invoice Number": 34,
-    "Purchase Order Number": 34,
-    "Heat Number": 38,
+    "Supplier Name": 50,
+    "Buyer Name": 54,
+    "Sln To Supplier Challan Number": 56,
+    "Supplier To Customer Invoice Number": 38,
+    "Purchase Order Number": 38,
+    "Heat Number": 32,
     "Per Ring Weight": 32,
     "Packing Weight": 30,
     "Gross Weight": 27,
 }
+# After scaling, cap these so spare width goes to text-heavy columns (HTML wraps in-cell).
+COLUMN_MAX = {
+    "TYPES": 44,
+    "Challan NO": 32,
+    "Invoice Number": 38,
+    "DATE": 48,
+    "REC.DATE": 48,
+    "Total Pallets": 34,
+    "Total QTY": 38,
+    "Per Ring Weight": 36,
+    "Packing Weight": 34,
+    "Gross Weight": 32,
+}
+WIDE_HEADERS = {
+    "Supplier Name",
+    "Buyer Name",
+    "Sln To Supplier Challan Number",
+    "Heat Number",
+    "Purchase Order Number",
+    "Per Pallet * Qty",
+    "Supplier To Customer Invoice Number",
+}
+# Shrink these first when minimum widths exceed the printable width.
+SHRINKABLE_HEADERS = {
+    "Gross Weight",
+    "Packing Weight",
+    "Per Ring Weight",
+    "Total Pallets",
+    "Purchase Order Number",
+    "Supplier To Customer Invoice Number",
+    "Per Pallet * Qty",
+}
+SHRINK_FLOOR = 20
 
 
 def _table_headers(headers: list[str]) -> list[str]:
@@ -98,19 +135,47 @@ def _widths(headers: list[str], usable: float) -> list[float]:
     widths = [COLUMN_MIN.get(header, 40) for header in headers]
     total = sum(widths) or 1
     if total > usable:
+        deficit = total - usable
+        for _ in range(80):
+            if deficit <= 0.5:
+                break
+            progress = False
+            for index, header in enumerate(headers):
+                if header in SHRINKABLE_HEADERS and widths[index] > SHRINK_FLOOR + 0.5:
+                    step = min(deficit, widths[index] - SHRINK_FLOOR, 3)
+                    widths[index] -= step
+                    deficit -= step
+                    progress = True
+                    if deficit <= 0.5:
+                        break
+            if not progress:
+                scale = usable / sum(widths)
+                widths = [width * scale for width in widths]
+                break
+    else:
         scale = usable / total
         widths = [width * scale for width in widths]
-    else:
-        extra = usable - total
-        grow = [
-            index
-            for index, header in enumerate(headers)
-            if header in {"Heat Number", "Supplier To Customer Invoice Number", "Invoice Number"}
-        ] or [len(widths) - 1]
-        share = extra / len(grow)
+    widths = _cap_and_grow(widths, headers, usable)
+    return widths
+
+
+def _cap_and_grow(widths: list[float], headers: list[str], usable: float) -> list[float]:
+    """Clamp short-value columns, give freed points to supplier / buyer / heat / challan text."""
+    freed = 0.0
+    for index, header in enumerate(headers):
+        cap = COLUMN_MAX.get(header)
+        if cap is None or widths[index] <= cap:
+            continue
+        freed += widths[index] - cap
+        widths[index] = cap
+    if freed > 0.5:
+        grow = [index for index, header in enumerate(headers) if header in WIDE_HEADERS]
+        if not grow:
+            grow = list(range(len(widths)))
+        share = freed / len(grow)
         for index in grow:
             widths[index] += share
-    widths[-1] = usable - sum(widths[:-1])
+    widths[-1] = max(SHRINK_FLOOR, usable - sum(widths[:-1]))
     return widths
 
 
@@ -252,11 +317,26 @@ def _line_count(text: str, width: float, size: float, *, bold: bool = False) -> 
     return max(lines, 1)
 
 
-def _wrap_to_width(text: str, width: float, size: float) -> str:
+def _wrap_hard_break(text: str, limit: float, size: float, *, bold: bool = False) -> str:
+    """Wrap SKUs and other long tokens without spaces so they stay inside the column."""
+    fontname = "hebo" if bold else "helv"
+    lines: list[str] = []
+    rest = (text or "").strip()
+    while rest:
+        cut = len(rest)
+        while cut > 1 and fitz.get_text_length(rest[:cut], fontname=fontname, fontsize=size) > limit:
+            cut -= 1
+        lines.append(rest[:cut])
+        rest = rest[cut:]
+    return "\n".join(lines)
+
+
+def _wrap_to_width(text: str, width: float, size: float, *, bold: bool = False) -> str:
     """Break a long value on a hyphen, not in the middle of a word."""
     shown = (text or "").strip()
     limit = max(width - 6, 12)
-    if not shown or fitz.get_text_length(shown, fontname="helv", fontsize=size) <= limit:
+    fontname = "hebo" if bold else "helv"
+    if not shown or fitz.get_text_length(shown, fontname=fontname, fontsize=size) <= limit:
         return shown
     pieces: list[str] = []
     token = ""
@@ -271,21 +351,36 @@ def _wrap_to_width(text: str, width: float, size: float) -> str:
     current = ""
     for piece in pieces:
         trial = current + piece
-        if current and fitz.get_text_length(trial, fontname="helv", fontsize=size) > limit:
+        if current and fitz.get_text_length(trial, fontname=fontname, fontsize=size) > limit:
             lines.append(current)
             current = piece
         else:
             current = trial
     if current:
-        lines.append(current)
+        if fitz.get_text_length(current, fontname=fontname, fontsize=size) > limit:
+            lines.extend(_wrap_hard_break(current, limit, size, bold=bold).split("\n"))
+        else:
+            lines.append(current)
     return "\n".join(lines)
 
 
 def _data_row_height(values: list[str], headers: list[str], widths: list[float]) -> float:
     lines = 1
-    for index, _header in enumerate(headers):
+    for index, header in enumerate(headers):
         value = values[index] if index < len(values) else ""
-        wrapped = _wrap_to_width(value, widths[index], DATA_SIZE)
+        highlight = header in HIGHLIGHT_HEADERS and (value or "").strip()
+        if header == "TYPES":
+            cell_size = 6.5
+        else:
+            cell_size = DATA_SIZE + 0.5 if highlight else DATA_SIZE
+        wrapped, _ = _prepare_cell_text(
+            value,
+            widths[index],
+            ROW_H * 4,
+            cell_size,
+            bold=bool(highlight) or header == "TYPES",
+            header=header,
+        )
         lines = max(lines, wrapped.count("\n") + 1 if wrapped else 1)
     return max(ROW_H, 6 + lines * (DATA_SIZE + 2))
 
@@ -297,6 +392,85 @@ def _header_row_height(headers: list[str], widths: list[float]) -> float:
         wrapped = max(text.count("\n") + 1, _line_count(text, widths[index], HEADER_SIZE, bold=True))
         lines = max(lines, wrapped)
     return 8 + lines * (HEADER_SIZE + 2.4)
+
+
+def _prepare_cell_text(
+    text: str,
+    width: float,
+    height: float,
+    size: float,
+    *,
+    bold: bool = False,
+    header: str = "",
+) -> tuple[str, float]:
+    """Wrap or shrink until every line fits the cell width and height."""
+    shown = (text or "").strip()
+    if not shown:
+        return "", size
+    fontname = "hebo" if bold else "helv"
+    limit = max(width - 4, 6)
+    size_use = size
+    while size_use >= 4.5:
+        if header == "TYPES" or fitz.get_text_length(shown, fontname=fontname, fontsize=size_use) > limit:
+            wrapped = _wrap_hard_break(shown.replace("\n", " "), limit, size_use, bold=bold)
+        else:
+            wrapped = _wrap_to_width(shown, width, size_use, bold=bold)
+        lines = [line for line in wrapped.split("\n") if line.strip()]
+        if not lines:
+            return "", size_use
+        line_h = size_use + 2
+        needed_h = len(lines) * line_h
+        too_wide = any(
+            fitz.get_text_length(line, fontname=fontname, fontsize=size_use) > limit for line in lines
+        )
+        if not too_wide and needed_h <= max(height - 4, line_h):
+            return "\n".join(lines), size_use
+        size_use -= 0.35
+    wrapped = _wrap_hard_break(shown.replace("\n", " "), limit, 4.5, bold=bold)
+    return wrapped, 4.5
+
+
+def _draw_data_cell(
+    page: fitz.Page,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    text: str,
+    *,
+    header: str = "",
+    bold: bool = False,
+    size: float = DATA_SIZE,
+    align: int = 0,
+    fill: tuple[float, float, float] | None = None,
+) -> None:
+    """HTML cell: word-break + fixed box so SKU / challan cannot bleed into the next column."""
+    pad = 1
+    inner = fitz.Rect(x0 + pad, y0 + pad, x1 - pad, y1 - pad)
+    bg = fill if fill else (1, 1, 1)
+    page.draw_rect(inner, color=(0.75, 0.75, 0.75), fill=bg, width=0.15)
+    shown = (text or "").strip().replace("\n", " ")
+    if not shown:
+        return
+    if header == "TYPES" and len(shown) > 10:
+        shown = f"{shown[:10]}\n{shown[10:]}"
+    align_css = {0: "left", 1: "center", 2: "right"}[align]
+    weight = "700" if bold or header in HIGHLIGHT_HEADERS else "400"
+    bg_css = (
+        f"background-color: rgb({int(HIGHLIGHT_FILL[0]*255)},{int(HIGHLIGHT_FILL[1]*255)},{int(HIGHLIGHT_FILL[2]*255)});"
+        if fill
+        else ""
+    )
+    font_px = max(6.0, size + (0.5 if header in HIGHLIGHT_HEADERS else 0))
+    css = (
+        "body{margin:0;padding:1px;font-family:Helvetica,sans-serif;"
+        f"font-size:{font_px}px;font-weight:{weight};{bg_css}"
+        f"word-break:break-all;overflow-wrap:anywhere;line-height:1.15;"
+        f"text-align:{align_css};"
+        "}"
+    )
+    body = html.escape(shown).replace("\n", "<br/>")
+    page.insert_htmlbox(inner, f"<body>{body}</body>", css=css)
 
 
 def _draw_in_cell(
@@ -312,33 +486,95 @@ def _draw_in_cell(
     align: int = 0,
     valign: str = "top",
 ) -> None:
-    """Draw every line inside the cell. Header lines are centered as a block."""
-    lines = (text or "").split("\n") or [""]
-    fontname = "hebo" if bold else "helv"
-    line_h = size + 2.4
-    block_h = line_h * len(lines)
-    if valign == "middle":
-        y = y0 + size + max(0, ((y1 - y0) - block_h) / 2)
+    """Draw text clipped inside the cell borders."""
+    shown = (text or "").strip()
+    if not shown:
+        return
+    if align == 1:
+        align_flag = fitz.TEXT_ALIGN_CENTER
+    elif align == 2:
+        align_flag = fitz.TEXT_ALIGN_RIGHT
     else:
-        y = y0 + size + 2
-    inner_left = x0 + 1.5
-    inner_right = x1 - 1.5
-    room = max(inner_right - inner_left, 4)
-    for line in lines:
-        shown = line.strip()
-        if shown:
+        align_flag = fitz.TEXT_ALIGN_LEFT
+    fontname = "hebo" if bold else "helv"
+    pad_x = 2
+    pad_y = 2
+    box = fitz.Rect(x0 + pad_x, y0 + pad_y, x1 - pad_x, y1 - pad_y)
+    if box.width <= 2 or box.height <= 2:
+        return
+
+    if valign == "middle":
+        lines = shown.split("\n")
+        line_h = size + 2.4
+        block_h = line_h * max(len(lines), 1)
+        y = y0 + size + max(0, ((y1 - y0) - block_h) / 2)
+        room = max(box.width, 4)
+        for line in lines:
+            part = line.strip()
+            if not part:
+                y += line_h
+                continue
             draw_size = size
-            while draw_size > 4.5 and fitz.get_text_length(shown, fontname=fontname, fontsize=draw_size) > room:
+            while draw_size > 4.5 and fitz.get_text_length(part, fontname=fontname, fontsize=draw_size) > room:
                 draw_size -= 0.15
-            width = fitz.get_text_length(shown, fontname=fontname, fontsize=draw_size)
-            if align == 1:
-                x = inner_left + max(0, (room - width) / 2)
-            elif align == 2:
-                x = inner_right - width
-            else:
-                x = inner_left
-            page.insert_text((x, y), shown, fontname=fontname, fontsize=draw_size)
-        y += line_h
+            line_box = fitz.Rect(box.x0, y - 1, box.x1, min(y + line_h, box.y1))
+            page.insert_textbox(
+                line_box,
+                part,
+                fontname=fontname,
+                fontsize=draw_size,
+                align=align_flag,
+                color=(0, 0, 0),
+            )
+            y += line_h
+        return
+
+    draw_size = size
+    while draw_size >= 4.5:
+        spare = page.insert_textbox(
+            box,
+            shown,
+            fontname=fontname,
+            fontsize=draw_size,
+            align=align_flag,
+            color=(0, 0, 0),
+        )
+        if spare >= 0:
+            return
+        draw_size -= 0.35
+    page.insert_textbox(
+        box,
+        shown.replace("\n", " ")[:64],
+        fontname=fontname,
+        fontsize=4.5,
+        align=align_flag,
+        color=(0, 0, 0),
+    )
+
+
+def _draw_header_cell(
+    page: fitz.Page,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    label: str,
+) -> None:
+    """HTML header label — same engine as data cells so labels stay visible when columns are narrow."""
+    pad = 1
+    inner = fitz.Rect(x0 + pad, y0 + pad, x1 - pad, y1 - pad)
+    shown = (label or "").strip()
+    if not shown:
+        return
+    css = (
+        "body{margin:0;padding:1px;font-family:Helvetica,sans-serif;"
+        f"font-size:{HEADER_SIZE}px;font-weight:700;"
+        "line-height:1.12;text-align:center;"
+        "word-break:break-word;overflow-wrap:break-word;"
+        "}"
+    )
+    body = html.escape(shown).replace("\n", "<br/>")
+    page.insert_htmlbox(inner, f"<body>{body}</body>", css=css)
 
 
 def _draw_header_row(page: fitz.Page, top: float, headers: list[str], col_x: list[float], row_h: float) -> None:
@@ -349,17 +585,14 @@ def _draw_header_row(page: fitz.Page, top: float, headers: list[str], col_x: lis
         width=0.5,
     )
     for index, title in enumerate(headers):
-        _draw_in_cell(
+        label = HEADER_TEXT.get(title, title)
+        _draw_header_cell(
             page,
             col_x[index],
             top,
             col_x[index + 1],
             top + row_h,
-            HEADER_TEXT.get(title, title),
-            bold=True,
-            size=HEADER_SIZE,
-            align=1,
-            valign="middle",
+            label,
         )
     for xv in col_x:
         vline(page, xv, top, top + row_h, width=0.4)
@@ -386,22 +619,29 @@ def _draw_data_row(
         )
     else:
         hline(page, MARGIN, RIGHT, bottom, width=0.3)
-    for xv in col_x:
-        vline(page, xv, top, bottom, width=0.3)
     for index, header in enumerate(headers):
         value = values[index] if index < len(values) else ""
-        width = col_x[index + 1] - col_x[index]
-        _draw_in_cell(
+        highlight = header in HIGHLIGHT_HEADERS and (value or "").strip()
+        if header == "TYPES":
+            cell_size = 6.5
+        else:
+            cell_size = DATA_SIZE if not highlight else DATA_SIZE + 0.5
+        cell_fill = HIGHLIGHT_FILL if highlight and not fill else None
+        _draw_data_cell(
             page,
             col_x[index],
             top,
             col_x[index + 1],
             bottom,
-            _wrap_to_width(value, width, DATA_SIZE),
-            bold=bold,
-            size=DATA_SIZE,
+            value,
+            header=header,
+            bold=bold or bool(highlight),
+            size=cell_size,
             align=2 if header in RIGHT_HEADERS else 0,
+            fill=cell_fill,
         )
+    for xv in col_x:
+        vline(page, xv, top, bottom, width=0.35)
 
 
 def _number(value: str) -> Decimal:

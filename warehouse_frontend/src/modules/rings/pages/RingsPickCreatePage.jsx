@@ -121,8 +121,8 @@ const RingsPickCreatePage = () => {
 
   useEffect(() => {
     if (!isEdit || !existingPick || hydratedRef.current) return;
-    if (existingPick.status !== 'DRAFT') {
-      window.alert('Only draft pick slips can be edited.');
+    if (existingPick.status === 'CANCELLED') {
+      window.alert('Cancelled pick slips cannot be edited.');
       navigate(`/rings/picks/${pickId}`);
       return;
     }
@@ -547,7 +547,11 @@ const RingsPickCreatePage = () => {
     <div className="space-y-6">
       <PageHeader
         title={isEdit ? `Edit Pick Slip ${existingPick?.document_number || ''}` : 'New Pick Slip'}
-        description="Select product, then the inward invoice. Quantity loads in full and can be split across lines up to that invoice remaining qty."
+        description={
+          isEdit && existingPick?.status === 'POSTED'
+            ? 'Posted slip: saving returns stock, updates the slip, then posts dispatch again.'
+            : 'Select product, then the inward invoice. Quantity loads in full and can be split across lines up to that invoice remaining qty.'
+        }
         breadcrumbs={[
           { label: 'Picking List', to: '/rings/picks' },
           { label: isEdit ? (existingPick?.document_number || 'Edit') : 'New' },

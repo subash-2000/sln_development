@@ -96,8 +96,18 @@ const RingsPickPage = () => {
             {
               type: 'edit',
               label: 'Edit',
-              onClick: () => navigate(`/rings/picks/${row.id}/edit`),
-              hidden: row.status !== 'DRAFT',
+              onClick: () => {
+                if (
+                  row.status === 'POSTED'
+                  && !window.confirm(
+                    `Edit posted pick ${row.document_number}? Stock will be adjusted and the slip will be posted again after save.`
+                  )
+                ) {
+                  return;
+                }
+                navigate(`/rings/picks/${row.id}/edit`);
+              },
+              hidden: row.status === 'CANCELLED',
             },
             {
               type: 'delete',

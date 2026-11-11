@@ -110,7 +110,6 @@ const menuItems = [
         label: 'Warehouse',
         items: [
           { icon: ArrowDownLeft, label: 'Inward', path: '/rings/inward' },
-          { icon: ArrowUpRight, label: 'Outward', path: '/logistics/outward' },
           { icon: ClipboardList, label: 'Picking List', path: '/rings/picks' },
           { icon: FileText, label: 'Dispatch / Challan', path: '/rings/dispatch' },
           { icon: Truck, label: 'Dispatch Control', path: '/logistics/dispatch' },
