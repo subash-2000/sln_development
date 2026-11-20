@@ -15,12 +15,14 @@ class RateCardRepository:
         self,
         company_id: uuid.UUID | None = None,
         vendor_id: uuid.UUID | None = None,
+        customer_id: uuid.UUID | None = None,
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[list[RateCard], int]:
         query = select(RateCard).options(
             selectinload(RateCard.company),
             selectinload(RateCard.vendor),
+            selectinload(RateCard.customer),
             selectinload(RateCard.items),
         )
         count_query = select(func.count(RateCard.id))
@@ -32,6 +34,9 @@ class RateCardRepository:
         if vendor_id:
             query = query.where(RateCard.vendor_id == vendor_id)
             count_query = count_query.where(RateCard.vendor_id == vendor_id)
+        if customer_id:
+            query = query.where(RateCard.customer_id == customer_id)
+            count_query = count_query.where(RateCard.customer_id == customer_id)
 
         total_res = await self.db.execute(count_query)
         total = total_res.scalar() or 0
@@ -46,6 +51,7 @@ class RateCardRepository:
             .options(
                 selectinload(RateCard.company),
                 selectinload(RateCard.vendor),
+                selectinload(RateCard.customer),
                 selectinload(RateCard.items),
             )
             .where(RateCard.id == rate_card_id)
@@ -54,11 +60,12 @@ class RateCardRepository:
         return res.scalar_one_or_none()
 
     async def get_by_code(
-        self, company_id: uuid.UUID, vendor_id: uuid.UUID | None, code: str
+        self, company_id: uuid.UUID, vendor_id: uuid.UUID | None, code: str, customer_id: uuid.UUID | None = None
     ) -> RateCard | None:
         stmt = select(RateCard).where(
             RateCard.company_id == company_id,
             RateCard.vendor_id == vendor_id,
+            RateCard.customer_id == customer_id,
             RateCard.code == code.strip().upper(),
         )
         res = await self.db.execute(stmt)

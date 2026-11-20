@@ -37,6 +37,7 @@ class RateCardCreateRequest(BaseModel):
     vendor_id: uuid.UUID | None = Field(
         None, description="Optional specific vendor scope; if null, standard company card"
     )
+    customer_id: uuid.UUID | None = Field(None, description="Optional customer pricing scope")
     code: str = Field(
         ..., min_length=2, max_length=50, description="Rate Card Code (e.g. 'RC-STD-2026')"
     )
@@ -56,6 +57,8 @@ class RateCardResponse(BaseModel):
     company_code: str | None = None
     vendor_id: uuid.UUID | None = None
     vendor_name: str | None = None
+    customer_id: uuid.UUID | None = None
+    customer_name: str | None = None
     code: str
     name: str
     description: str | None = None

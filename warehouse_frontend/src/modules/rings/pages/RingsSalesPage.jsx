@@ -198,6 +198,10 @@ const RingsSalesPage = () => {
                     <th className={`${thLeft} min-w-[220px]`}>Buyer Name</th>
                     <th className={`${thLeft} min-w-[190px]`}>Supp To Customer Invoice</th>
                     <th className={`${thLeft} min-w-[110px]`}>Inv Date</th>
+                    <th className={`${thLeft} min-w-[160px]`}>Sales Tax Invoice</th>
+                    <th className={`${thLeft} min-w-[110px]`}>Tax Inv Date</th>
+                    <th className={`${thRight} min-w-[130px]`}>Tax Inv Amount</th>
+                    <th className={`${thCenter} min-w-[100px]`}>Tracking</th>
                     <th className={`${thRight} min-w-[80px]`}>Pallets</th>
                     <th className={`${thRight} min-w-[110px]`}>QTY</th>
                     <th className={`${thRight} min-w-[90px]`}>Rate (₹)</th>
@@ -222,6 +226,10 @@ const RingsSalesPage = () => {
                       <td className={`${tdLeft} font-medium text-gray-900`}>{row.customer_name || '—'}</td>
                       <td className={`${tdLeft} font-mono`}>{row.supplier_customer_invoice_number || '—'}</td>
                       <td className={tdLeft}>{row.invoice_date || '—'}</td>
+                      <td className={`${tdLeft} font-mono`}>{row.sales_tax_invoice_number || '—'}</td>
+                      <td className={tdLeft}>{row.sales_tax_invoice_date || '—'}</td>
+                      <td className={tdRight}>{row.sales_tax_invoice_amount ? formatCurrency(row.sales_tax_invoice_amount) : '—'}</td>
+                      <td className={tdCenter}>{row.sales_tax_tracking_status}</td>
                       <td className={tdRight}>{row.pallet_count ?? 0}</td>
                       <td className={`${tdRight} font-semibold text-gray-900`}>{formatQty(row.quantity)}</td>
                       <td className={tdRight}>{formatRate(row.unit_rate)}</td>
@@ -250,7 +258,7 @@ const RingsSalesPage = () => {
                   ))}
                   {rows.length === 0 && (
                     <tr>
-                      <td colSpan={19} className="py-12 text-center text-sm text-gray-400 font-medium">
+                      <td colSpan={23} className="py-12 text-center text-sm text-gray-400 font-medium">
                         No posted dispatches found matching current filters.
                       </td>
                     </tr>
@@ -262,6 +270,7 @@ const RingsSalesPage = () => {
                       <td colSpan={7} className={`${tdLeft} font-bold text-gray-900 uppercase tracking-wider`}>
                         Total ({rows.length} {rows.length === 1 ? 'record' : 'records'})
                       </td>
+                      <td colSpan={4} className={tdCenter}>—</td>
                       <td className={tdRight}>{totals.pallets}</td>
                       <td className={`${tdRight} text-primary-900`}>{formatQty(totals.qty)}</td>
                       <td className={tdRight}>—</td>

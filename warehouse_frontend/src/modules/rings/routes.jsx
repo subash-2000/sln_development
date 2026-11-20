@@ -15,6 +15,7 @@ export const ringsRoutes = [
     children: [
       { index: true, element: <RingsInwardPage /> },
       { path: 'new', element: <RingsInwardCreatePage /> },
+      { path: ':id/edit', element: <RingsInwardCreatePage /> },
       { path: ':id', element: <RingsDocumentDetailPage /> },
     ],
   },

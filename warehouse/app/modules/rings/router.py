@@ -56,6 +56,37 @@ async def create_rings_inward(
     return success_response(data=result.model_dump(mode="json"), message="Rings inward posted")
 
 
+@router.put("/inward/{inward_id}", response_model=StandardResponse[RingsDocumentResponse])
+async def update_rings_inward(
+    inward_id: uuid.UUID,
+    payload: RingsInwardCreate,
+    context: TenantContext = Depends(get_current_tenant_context),
+    current_user: User = Depends(
+        require_any_permission("logistics.inward", "inventory.write")
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = RingsService(db)
+    result = await service.update_inward(
+        inward_id, payload, _company(context), current_user.id
+    )
+    return success_response(data=result.model_dump(mode="json"), message="Rings inward updated")
+
+
+@router.delete("/inward/{inward_id}", response_model=StandardResponse[None])
+async def delete_rings_inward(
+    inward_id: uuid.UUID,
+    context: TenantContext = Depends(get_current_tenant_context),
+    current_user: User = Depends(
+        require_any_permission("logistics.inward", "inventory.write")
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = RingsService(db)
+    await service.delete_inward(inward_id, _company(context), current_user.id)
+    return success_response(data=None, message="Rings inward deleted and stock reversed")
+
+
 @router.post("/picks", response_model=StandardResponse[RingsDocumentResponse])
 async def create_rings_pick(
     payload: RingsPickCreate,

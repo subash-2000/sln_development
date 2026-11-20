@@ -1,7 +1,11 @@
 import React, { lazy } from 'react';
-import UnderDevelopmentPage from '../../components/common/UnderDevelopmentPage';
+import { creditDebitRoutes } from '../credit-debit/routes';
 
 const BillingListPage = lazy(() => import('./pages/BillingListPage'));
+const CustomerPricingPage = lazy(() => import('./pages/CustomerPricingPage'));
+const BillingGeneratePage = lazy(() => import('./pages/BillingGeneratePage'));
+const BillingDetailPage = lazy(() => import('./pages/BillingDetailPage'));
+const SalesTaxTrackingPage = lazy(() => import('./pages/SalesTaxTrackingPage'));
 
 export const billingRoutes = [
   {
@@ -10,21 +14,12 @@ export const billingRoutes = [
       { index: true, element: <BillingListPage /> },
       {
         path: 'new',
-        element: (
-          <UnderDevelopmentPage
-            title="Create Billing Contract"
-            moduleName="Billing"
-            backTo="/finance/billing"
-            breadcrumbs={[
-              { label: 'Dashboard', to: '/dashboard' },
-              { label: 'Finance' },
-              { label: 'Billing Contracts', to: '/finance/billing' },
-              { label: 'New Billing' },
-            ]}
-          />
-        ),
+        element: <BillingGeneratePage />,
       },
-      { path: ':id', element: <BillingListPage /> },
+      { path: ':id', element: <BillingDetailPage /> },
     ],
   },
+  ...creditDebitRoutes,
+  { path: 'finance/customer-pricing', element: <CustomerPricingPage /> },
+  { path: 'finance/sales-tax-invoices', element: <SalesTaxTrackingPage /> },
 ];

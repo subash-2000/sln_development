@@ -44,13 +44,13 @@ class RingsLineCreate(BaseModel):
 
     @model_validator(mode="after")
     def resolve_quantity(self) -> "RingsLineCreate":
-        if self.quantity is None:
-            qty = received_quantity(
-                self.pallet_count, self.qty_per_pallet, self.box_count, self.qty_per_box
-            )
-            if qty <= 0:
-                raise ValueError("Enter quantity, or pallet/box counts that yield a quantity")
-            self.quantity = qty
+        packed = received_quantity(
+            self.pallet_count, self.qty_per_pallet, self.box_count, self.qty_per_box
+        )
+        if packed > 0:
+            self.quantity = packed + Decimal(self.short_quantity or 0)
+        elif self.quantity is None or self.quantity <= 0:
+            raise ValueError("Enter quantity, or pallet/box counts that yield a quantity")
         return self
 
 
@@ -89,6 +89,7 @@ class RingsPickCreate(BaseModel):
     supplier_document_date: date | None = None
     received_date: date | None = None
     transporter_name: str | None = None
+    vehicle_number: str | None = Field(None, max_length=50)
     po_number: str | None = None
     packing_weight: Decimal = Field(Decimal("0"), ge=0)
     remarks: str | None = None
@@ -113,6 +114,7 @@ class RingsPickCreate(BaseModel):
 
 
 class RingsDispatchRequest(BaseModel):
+    transporter_name: str | None = Field(None, max_length=150)
     vehicle_number: str | None = None
     eway_bill_number: str | None = None
     packing_weight: Decimal | None = Field(None, ge=0)
@@ -290,3 +292,8 @@ class RingsSalesRow(BaseModel):
     line_gross_weight: Decimal | None = None
     gross_weight: Decimal
     dispatch_date: date | None = None
+    sales_tax_invoice_number: str | None = None
+    sales_tax_invoice_date: date | None = None
+    sales_tax_invoice_amount: Decimal | None = None
+    sales_tax_tracking_status: str = "PENDING"
+    sales_tax_invoice_remarks: str | None = None

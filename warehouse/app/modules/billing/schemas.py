@@ -52,6 +52,17 @@ class BillingLineResponse(BaseModel):
     description: str | None = None
 
 
+class ManualChargeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    description: str
+    quantity: Decimal
+    rate: Decimal
+    amount: Decimal
+    remarks: str | None = None
+
+
 class BillingDocumentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -77,6 +88,7 @@ class BillingDocumentResponse(BaseModel):
     total_amount: Decimal
     notes: str | None = None
     lines: list[BillingLineResponse] = []
+    manual_charges: list[ManualChargeResponse] = []
     created_at: datetime
     updated_at: datetime
     created_by_id: UUID | None = None
@@ -91,5 +103,25 @@ class CalculateBillingRequest(BaseModel):
     vendor_id: UUID | None = None
     customer_id: UUID | None = None
     rate_card_id: UUID | None = None
-    tax_rate_percent: Decimal = Field(default=Decimal("18.00"), ge=0, le=100)
+    tax_rate_percent: Decimal = Field(default=Decimal("0.00"), ge=0, le=100)
     notes: str | None = None
+
+
+class ManualChargeCreate(BaseModel):
+    description: str = Field(..., min_length=1, max_length=255)
+    quantity: Decimal = Field(Decimal("1"), gt=0)
+    rate: Decimal = Field(..., ge=0)
+    remarks: str | None = None
+
+
+class MonthEndRunRequest(BaseModel):
+    year: int = Field(..., ge=2000, le=2200)
+    month: int = Field(..., ge=1, le=12)
+    warehouse_id: UUID | None = None
+
+
+class MonthEndRunResponse(BaseModel):
+    period_id: UUID
+    period_name: str
+    generated: int
+    skipped_existing: int

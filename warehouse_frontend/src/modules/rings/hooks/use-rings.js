@@ -26,6 +26,30 @@ export const useCreateRingsInward = () => {
   });
 };
 
+export const useUpdateRingsInward = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }) => ringsApi.updateInward(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rings-documents'] });
+      queryClient.invalidateQueries({ queryKey: ['rings-document'] });
+      queryClient.invalidateQueries({ queryKey: ['rings-stock'] });
+    },
+  });
+};
+
+export const useDeleteRingsInward = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ringsApi.deleteInward,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rings-documents'] });
+      queryClient.invalidateQueries({ queryKey: ['rings-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['rings-day-close'] });
+    },
+  });
+};
+
 export const useCreateRingsPick = () => {
   const queryClient = useQueryClient();
   return useMutation({

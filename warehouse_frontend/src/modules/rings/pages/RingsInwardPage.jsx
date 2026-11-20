@@ -1,12 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useListState } from '../../../hooks/use-list-state';
 import ListPage from '../../../components/tables/ListPage';
 import RowActions from '../../../components/tables/RowActions';
-import { useRingsDocuments } from '../hooks/use-rings';
+import ConfirmDialog from '../../../components/modals/ConfirmDialog';
+import { useDeleteRingsInward, useRingsDocuments } from '../hooks/use-rings';
 
 const RingsInwardPage = () => {
   const navigate = useNavigate();
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const deleteInward = useDeleteRingsInward();
   const initialColumns = [
     { key: 'document_number', label: 'Reference', sortable: true, widthClass: 'w-40' },
     { key: 'created_at', label: 'Date', type: 'datetime', sortable: true },
@@ -25,6 +28,7 @@ const RingsInwardPage = () => {
   });
 
   return (
+    <>
     <ListPage
       title="Inward Transactions"
       description="Manage material receipts and inbound stock movements."
@@ -53,6 +57,8 @@ const RingsInwardPage = () => {
         <RowActions
           actions={[
             { type: 'view', label: 'View Details', onClick: () => navigate(`/rings/inward/${row.id}`) },
+            { type: 'edit', label: 'Edit Inward', onClick: () => navigate(`/rings/inward/${row.id}/edit`), hidden: row.status === 'CANCELLED' },
+            { type: 'delete', label: 'Delete Inward', onClick: () => setDeleteTarget(row), variant: 'danger', hidden: row.status === 'CANCELLED' },
           ]}
         />
       )}
@@ -73,6 +79,28 @@ const RingsInwardPage = () => {
         onPageSizeChange: list.setPageSize,
       }}
     />
+    <ConfirmDialog
+      open={!!deleteTarget}
+      title="Delete inward transaction?"
+      description={
+        deleteTarget
+          ? `This will cancel ${deleteTarget.document_number} and reverse its stock. It cannot be deleted if its stock has already been picked or dispatched.`
+          : ''
+      }
+      confirmLabel="Delete and reverse stock"
+      isLoading={deleteInward.isPending}
+      onClose={() => setDeleteTarget(null)}
+      onConfirm={async () => {
+        try {
+          await deleteInward.mutateAsync(deleteTarget.id);
+          setDeleteTarget(null);
+          refetch();
+        } catch (err) {
+          window.alert(err.response?.data?.message || err.message || 'Failed to delete inward');
+        }
+      }}
+    />
+    </>
   );
 };
 

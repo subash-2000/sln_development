@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,7 @@ from app.core.exceptions import ConflictException, NotFoundException
 from app.models.billing import RateCard, RateCardItem
 from app.models.company import Company
 from app.models.vendor import Vendor
+from app.models.customer import Customer
 from app.modules.rate_cards.repository import RateCardRepository
 from app.modules.rate_cards.schemas import (
     RateCardCreateRequest,
@@ -26,12 +28,14 @@ class RateCardService:
         self,
         company_id: uuid.UUID | None = None,
         vendor_id: uuid.UUID | None = None,
+        customer_id: uuid.UUID | None = None,
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[list[RateCardResponse], int]:
         cards, total = await self.repo.list_rate_cards(
             company_id=company_id,
             vendor_id=vendor_id,
+            customer_id=customer_id,
             offset=offset,
             limit=limit,
         )
@@ -49,6 +53,8 @@ class RateCardService:
         return self._to_response(card, created_by=created_by_name, updated_by=updated_by_name)
 
     async def create_rate_card(self, req: RateCardCreateRequest) -> RateCardResponse:
+        if req.valid_to and req.valid_to < req.valid_from:
+            raise ConflictException("Rate card valid-to date cannot be before valid-from date")
         # 1. Verify Company exists
         c_res = await self.db.execute(select(Company).where(Company.id == req.company_id))
         if not c_res.scalar_one_or_none():
@@ -69,17 +75,47 @@ class RateCardService:
                     error_code="VENDOR_NOT_FOUND",
                 )
 
+        if req.customer_id:
+            customer = await self.db.scalar(
+                select(Customer).where(
+                    Customer.id == req.customer_id,
+                    Customer.company_id == req.company_id,
+                )
+            )
+            if not customer:
+                raise NotFoundException(
+                    "Customer not found or does not belong to specified Company"
+                )
+
         # 3. Check uniqueness
         clean_code = req.code.strip().upper()
-        if await self.repo.get_by_code(req.company_id, req.vendor_id, clean_code):
+        if await self.repo.get_by_code(req.company_id, req.vendor_id, clean_code, req.customer_id):
             raise ConflictException(
                 f"Rate Card code '{clean_code}' already exists in scope",
                 error_code="RATE_CARD_CODE_EXISTS",
             )
 
+        if req.customer_id:
+            overlap = await self.db.scalar(
+                select(RateCard.id).where(
+                    RateCard.company_id == req.company_id,
+                    RateCard.customer_id == req.customer_id,
+                    RateCard.status == EntityStatus.ACTIVE.value,
+                    RateCard.is_active.is_(True),
+                    RateCard.valid_from <= (req.valid_to or datetime(2200, 12, 31, tzinfo=req.valid_from.tzinfo)),
+                    (RateCard.valid_to.is_(None) | (RateCard.valid_to >= req.valid_from)),
+                )
+            )
+            if overlap:
+                raise ConflictException(
+                    "An active customer rate card already covers this effective period",
+                    error_code="RATE_CARD_PERIOD_OVERLAP",
+                )
+
         rate_card = RateCard(
             company_id=req.company_id,
             vendor_id=req.vendor_id,
+            customer_id=req.customer_id,
             code=clean_code,
             name=req.name.strip(),
             description=req.description.strip() if req.description else None,
@@ -132,6 +168,8 @@ class RateCardService:
             company_code=card.company.code if card.company else None,
             vendor_id=card.vendor_id,
             vendor_name=card.vendor.name if card.vendor else None,
+            customer_id=card.customer_id,
+            customer_name=card.customer.name if card.customer else None,
             code=card.code,
             name=card.name,
             description=card.description,

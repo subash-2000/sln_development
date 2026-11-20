@@ -1,10 +1,29 @@
 from decimal import Decimal
+from uuid import uuid4
 
 from app.modules.rings.calc import basic_value, gross_weight, packing_detail_text, received_quantity
+from app.modules.rings.schemas import RingsLineCreate
 
 
 def test_received_quantity_pallets_and_boxes():
     assert received_quantity(11, Decimal("300"), 2, Decimal("100")) == Decimal("3500.000")
+
+
+def test_received_quantity_supports_pallet_only():
+    assert received_quantity(4, Decimal("690"), 0, Decimal("0")) == Decimal("2760.000")
+
+
+def test_inward_line_adds_short_quantity_to_mixed_packing_quantity():
+    line = RingsLineCreate(
+        product_id=uuid4(),
+        pallet_count=12,
+        qty_per_pallet=Decimal("350"),
+        box_count=1,
+        qty_per_box=Decimal("350"),
+        short_quantity=Decimal("40"),
+    )
+
+    assert line.quantity == Decimal("4590.000")
 
 
 def test_gross_weight_uses_quantity_not_basic_value():

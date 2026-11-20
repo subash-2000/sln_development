@@ -199,6 +199,20 @@ class InwardSummaryRow(BaseModel):
 
     status: str
 
+    challan_number: str | None = None
+    total_pallets: int = 0
+    qty_per_pallet: Decimal = Decimal("0")
+    total_boxes: int = 0
+    qty_per_box: Decimal = Decimal("0")
+    ring_weight: Decimal = Decimal("0")
+    net_weight: Decimal = Decimal("0")
+    packing_weight: Decimal = Decimal("0")
+    gross_weight: Decimal = Decimal("0")
+    remark: str | None = None
+    transporter_name: str | None = None
+    lr_number: str | None = None
+    rate: Decimal = Decimal("0")
+
 
 
 class OutwardSummaryRow(BaseModel):

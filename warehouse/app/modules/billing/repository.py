@@ -88,6 +88,7 @@ class BillingRepository:
         company_id: uuid.UUID,
         rate_card_id: uuid.UUID | None = None,
         vendor_id: uuid.UUID | None = None,
+        customer_id: uuid.UUID | None = None,
     ) -> RateCard | None:
         if rate_card_id:
             stmt = (
@@ -120,6 +121,23 @@ class BillingRepository:
             if card:
                 return card
 
+        if customer_id:
+            stmt = (
+                select(RateCard)
+                .options(selectinload(RateCard.items))
+                .where(
+                    RateCard.company_id == company_id,
+                    RateCard.customer_id == customer_id,
+                    RateCard.status == EntityStatus.ACTIVE.value,
+                    RateCard.is_active.is_(True),
+                )
+                .order_by(RateCard.valid_from.desc())
+            )
+            result = await self.db.execute(stmt)
+            card = result.scalars().first()
+            if card:
+                return card
+
         # Fallback to general company rate card with vendor_id IS NULL
         stmt = (
             select(RateCard)
@@ -127,6 +145,7 @@ class BillingRepository:
             .where(
                 RateCard.company_id == company_id,
                 RateCard.vendor_id.is_(None),
+                RateCard.customer_id.is_(None),
                 RateCard.status == EntityStatus.ACTIVE.value,
                 RateCard.is_active.is_(True),
             )
@@ -159,11 +178,14 @@ class BillingRepository:
         company_id: uuid.UUID,
         warehouse_id: uuid.UUID,
         vendor_id: uuid.UUID | None,
+        customer_id: uuid.UUID | None,
+        calculation_basis: str,
         start_date: date,
         end_date: date,
     ) -> Decimal:
+        metric = func.count(func.distinct(StockTransaction.id)) if calculation_basis == CalculationBasis.PER_TRANSACTION.value else func.coalesce(func.sum(StockMove.quantity), Decimal("0.0000"))
         stmt = (
-            select(func.coalesce(func.sum(StockMove.quantity), Decimal("0.0000")))
+            select(metric)
             .join(StockTransaction, StockMove.transaction_id == StockTransaction.id)
             .where(
                 StockTransaction.company_id == company_id,
@@ -186,6 +208,8 @@ class BillingRepository:
                     StockMove.vendor_id == vendor_id,
                 )
             )
+        if customer_id:
+            stmt = stmt.where(StockTransaction.partner_customer_id == customer_id)
 
         result = await self.db.execute(stmt)
         return Decimal(str(result.scalar_one()))
@@ -195,11 +219,14 @@ class BillingRepository:
         company_id: uuid.UUID,
         warehouse_id: uuid.UUID,
         vendor_id: uuid.UUID | None,
+        customer_id: uuid.UUID | None,
+        calculation_basis: str,
         start_date: date,
         end_date: date,
     ) -> Decimal:
+        dispatch_metric = func.count(func.distinct(DispatchOrder.id)) if calculation_basis == CalculationBasis.PER_TRANSACTION.value else func.coalesce(func.sum(DispatchOrderLine.dispatched_qty), Decimal("0.0000"))
         stmt = (
-            select(func.coalesce(func.sum(DispatchOrderLine.dispatched_qty), Decimal("0.0000")))
+            select(dispatch_metric)
             .join(DispatchOrder, DispatchOrderLine.dispatch_order_id == DispatchOrder.id)
             .where(
                 DispatchOrder.company_id == company_id,
@@ -216,13 +243,16 @@ class BillingRepository:
         )
         if vendor_id:
             stmt = stmt.where(DispatchOrder.vendor_id == vendor_id)
+        if customer_id:
+            stmt = stmt.where(DispatchOrder.customer_id == customer_id)
 
         result = await self.db.execute(stmt)
         dispatch_qty = Decimal(str(result.scalar_one()))
 
         # Also check outward stock transactions (e.g. transfers/deliveries not via dispatch order)
+        trx_metric = func.count(func.distinct(StockTransaction.id)) if calculation_basis == CalculationBasis.PER_TRANSACTION.value else func.coalesce(func.sum(StockMove.quantity), Decimal("0.0000"))
         trx_stmt = (
-            select(func.coalesce(func.sum(StockMove.quantity), Decimal("0.0000")))
+            select(trx_metric)
             .join(StockTransaction, StockMove.transaction_id == StockTransaction.id)
             .where(
                 StockTransaction.company_id == company_id,
@@ -246,6 +276,8 @@ class BillingRepository:
                     StockMove.vendor_id == vendor_id,
                 )
             )
+        if customer_id:
+            trx_stmt = trx_stmt.where(StockTransaction.partner_customer_id == customer_id)
 
         trx_result = await self.db.execute(trx_stmt)
         trx_qty = Decimal(str(trx_result.scalar_one()))
@@ -272,6 +304,7 @@ class BillingRepository:
             select(BillingDocument)
             .options(
                 selectinload(BillingDocument.lines).selectinload(BillingLine.product),
+                selectinload(BillingDocument.manual_charges),
                 selectinload(BillingDocument.billing_period),
                 selectinload(BillingDocument.warehouse),
                 selectinload(BillingDocument.vendor),

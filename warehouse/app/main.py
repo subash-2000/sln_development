@@ -17,8 +17,10 @@ from app.modules.billing import billing_router
 from app.modules.branches.router import router as branches_router
 from app.modules.companies.router import router as companies_router
 from app.modules.customers.router import router as customers_router
+from app.modules.credit_debit import credit_debit_router
 from app.modules.inventory.router import router as inventory_router
 from app.modules.dashboard.router import router as dashboard_router
+from app.modules.einvoice import einvoice_router
 from app.modules.invoicing import invoicing_router
 from app.modules.jobwork.router import router as jobwork_router
 from app.modules.locations.router import router as locations_router
@@ -31,6 +33,7 @@ from app.modules.rings import rings_router
 from app.modules.reports.router import router as reports_router
 from app.modules.roles.router import router as roles_router
 from app.modules.sequences.router import router as sequences_router
+from app.modules.sales_tax_tracking import sales_tax_tracking_router
 from app.modules.stocktake.router import router as stocktake_router
 from app.modules.transport.router import router as transport_router
 from app.modules.users.router import router as users_router
@@ -173,10 +176,12 @@ app.include_router(users_router, prefix="/api/v1")
 app.include_router(roles_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1")
 app.include_router(sequences_router, prefix="/api/v1")
+app.include_router(sales_tax_tracking_router, prefix="/api/v1")
 app.include_router(companies_router, prefix="/api/v1")
 app.include_router(branches_router, prefix="/api/v1")
 app.include_router(vendors_router, prefix="/api/v1")
 app.include_router(customers_router, prefix="/api/v1")
+app.include_router(credit_debit_router, prefix="/api/v1")
 app.include_router(transport_router, prefix="/api/v1")
 app.include_router(products_router, prefix="/api/v1")
 app.include_router(rate_cards_router, prefix="/api/v1")
@@ -193,4 +198,5 @@ app.include_router(rings_router, prefix="/api/v1")
 app.include_router(stocktake_router, prefix="/api/v1")
 app.include_router(reports_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
+app.include_router(einvoice_router, prefix="/api/v1")
 app.include_router(migration_router, prefix="/api/v1")

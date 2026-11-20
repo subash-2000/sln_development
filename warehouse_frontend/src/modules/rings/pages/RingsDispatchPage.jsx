@@ -4,10 +4,11 @@ import { useListState } from '../../../hooks/use-list-state';
 import ListPage from '../../../components/tables/ListPage';
 import RowActions from '../../../components/tables/RowActions';
 import { ringsApi } from '../api/rings.api';
-import { useRingsDocuments } from '../hooks/use-rings';
+import { useDeleteRingsPick, useRingsDocuments } from '../hooks/use-rings';
 
 const RingsDispatchPage = () => {
   const navigate = useNavigate();
+  const { mutateAsync: deletePick, isPending: isDeleting } = useDeleteRingsPick();
   const initialColumns = [
     { key: 'document_number', label: 'Outward No' },
     { key: 'workflow', label: 'Workflow' },
@@ -23,6 +24,27 @@ const RingsDispatchPage = () => {
     ...list.params,
     document_type: 'OUTWARD',
   });
+
+  const handleDelete = async (row) => {
+    const pickId = row.parent_document_id;
+    if (!pickId) {
+      window.alert('The source picking list for this delivery challan could not be found.');
+      return;
+    }
+    if (
+      !window.confirm(
+        `Delete delivery challan ${row.sln_challan_number || row.document_number}? Stock will be returned to the warehouse and its picking list will be cancelled.`
+      )
+    ) {
+      return;
+    }
+    try {
+      await deletePick(pickId);
+      refetch();
+    } catch (err) {
+      window.alert(err.response?.data?.message || err.message || 'Failed to delete delivery challan');
+    }
+  };
 
   return (
     <ListPage
@@ -41,6 +63,32 @@ const RingsDispatchPage = () => {
         <RowActions
           actions={[
             { type: 'view', label: 'View', onClick: () => navigate(`/rings/dispatch/${row.id}`) },
+            {
+              type: 'edit',
+              label: 'Edit',
+              onClick: () => {
+                if (!row.parent_document_id) {
+                  window.alert('The source picking list for this delivery challan could not be found.');
+                  return;
+                }
+                if (
+                  !window.confirm(
+                    `Edit delivery challan ${row.sln_challan_number || row.document_number}? Stock and challan details will be recalculated after save.`
+                  )
+                ) {
+                  return;
+                }
+                navigate(`/rings/picks/${row.parent_document_id}/edit`);
+              },
+              hidden: row.status === 'CANCELLED',
+            },
+            {
+              type: 'delete',
+              label: isDeleting ? 'Deleting…' : 'Delete',
+              onClick: () => handleDelete(row),
+              variant: 'danger',
+              hidden: row.status === 'CANCELLED',
+            },
             {
               type: 'custom',
               label: 'Download SLN challan Excel',

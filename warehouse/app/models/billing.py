@@ -46,6 +46,9 @@ class RateCard(BaseEntity):
         nullable=True,
         index=True,
     )
+    customer_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     code: Mapped[str] = mapped_column(
         String(50),
@@ -89,6 +92,7 @@ class RateCard(BaseEntity):
     # Relationships
     company: Mapped["Company"] = relationship("Company", lazy="joined")
     vendor: Mapped["Vendor | None"] = relationship("Vendor", lazy="joined")
+    customer: Mapped["Customer | None"] = relationship("Customer", lazy="joined")
     items: Mapped[list["RateCardItem"]] = relationship(
         "RateCardItem",
         back_populates="rate_card",
@@ -276,6 +280,12 @@ class BillingDocument(BaseEntity):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    manual_charges: Mapped[list["BillingManualCharge"]] = relationship(
+        "BillingManualCharge",
+        back_populates="billing_document",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
     billing_period: Mapped["BillingPeriod"] = relationship(
         "BillingPeriod", back_populates="documents", lazy="selectin"
     )
@@ -324,3 +334,16 @@ class BillingLine(BaseEntity):
         "BillingDocument", back_populates="lines"
     )
     product: Mapped[Optional["Product"]] = relationship("Product", lazy="selectin")
+
+
+class BillingManualCharge(BaseEntity):
+    __tablename__ = "billing_manual_charges"
+    billing_document_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("billing_documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    rate: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    remarks: Mapped[str | None] = mapped_column(Text)
+    billing_document: Mapped["BillingDocument"] = relationship(
+        "BillingDocument", back_populates="manual_charges", lazy="selectin"
+    )

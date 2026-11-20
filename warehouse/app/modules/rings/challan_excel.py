@@ -5,6 +5,7 @@ Buyer1 and Buyer2 use the same sheet. Only the buyer name and address change.
 
 from __future__ import annotations
 
+from copy import copy
 from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
@@ -130,7 +131,21 @@ def _fill(ws: Worksheet, document: RingsDocument, company: Company | None) -> No
         f"GSTIN/UIN : {customer.gstin}" if customer and customer.gstin else "",
         f"PAN/IT No : {customer.pan}" if customer and customer.pan else "",
     )
-    # Transporter stays blank so it can be written by hand. Vehicle and EWB are filled.
+    # Split the original transporter/vehicle label area into two labelled,
+    # bordered input cells so blank exports remain directly editable in Excel.
+    vehicle_label_style = copy(ws["K7"]._style)
+    input_style = copy(ws["M7"]._style)
+    if "K7:L7" in {str(cell_range) for cell_range in ws.merged_cells.ranges}:
+        ws.unmerge_cells("K7:L7")
+    ws["J7"] = "TRANSPORTER ID"
+    ws["K7"] = _clean(document.transporter_name) or None
+    ws["K7"]._style = input_style
+    ws["L7"] = "VEHICLE NO."
+    ws["L7"]._style = vehicle_label_style
+    for coordinate in ("J7", "K7", "L7", "M7"):
+        ws[coordinate].alignment = Alignment(
+            horizontal="center", vertical="center", wrap_text=False, shrink_to_fit=True
+        )
     ws["M7"] = document.vehicle_number or None
     ws["K8"] = document.eway_bill_number or None
 

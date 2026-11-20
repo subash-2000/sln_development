@@ -24,6 +24,7 @@ async def list_rate_cards(
     pagination: PaginationParams = Depends(),
     company_id: uuid.UUID | None = Query(None, description="Filter by Company scope"),
     vendor_id: uuid.UUID | None = Query(None, description="Filter by Vendor scope"),
+    customer_id: uuid.UUID | None = Query(None, description="Filter by Customer scope"),
     current_user: User = Depends(require_permission("billing.read")),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -31,6 +32,7 @@ async def list_rate_cards(
     cards, total = await service.list_rate_cards(
         company_id=company_id,
         vendor_id=vendor_id,
+        customer_id=customer_id,
         offset=pagination.offset,
         limit=pagination.limit,
     )

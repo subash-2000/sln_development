@@ -11,7 +11,6 @@ from app.core.constants import (
     InvoiceWorkflow,
     RingsDocumentStatus,
     RingsDocumentType,
-    is_pallet_supplier_blob,
 )
 from app.core.exceptions import ConflictException, NotFoundException, ValidationException
 from app.core.sequence import SequenceGenerator
@@ -27,7 +26,6 @@ from app.modules.inventory.service import InventoryService
 from app.modules.rings.calc import (
     basic_value,
     box_star_qty,
-    gross_weight,
     received_quantity,
     ring_weight_total,
 )
@@ -246,12 +244,6 @@ class RingsService:
     ) -> tuple[list[RingsDocumentLine], Decimal]:
         built: list[RingsDocumentLine] = []
         ring_mass = Decimal("0")
-        is_pallet = False
-        if vendor:
-            is_pallet = (getattr(vendor, "packaging_type", None) == "PALLET") or is_pallet_supplier_blob(
-                f"{vendor.code} {vendor.name}", getattr(vendor, "packaging_type", None)
-            )
-
         for item in lines_in:
             product = (
                 await self.db.execute(
@@ -267,33 +259,11 @@ class RingsService:
             if qty <= 0:
                 raise ValidationException("Line quantity must be greater than zero")
 
-            line_is_pallet = is_pallet
             line_vendor_id = getattr(item, "vendor_id", None) or (vendor.id if vendor else None)
-            if item.vendor_id and (not vendor or item.vendor_id != vendor.id):
-                v_res = await self.db.execute(
-                    select(Vendor).where(Vendor.id == item.vendor_id, Vendor.company_id == company_id)
-                )
-                v_obj = v_res.scalar_one_or_none()
-                if v_obj:
-                    line_is_pallet = (getattr(v_obj, "packaging_type", None) == "PALLET") or is_pallet_supplier_blob(
-                        f"{v_obj.code} {v_obj.name}", getattr(v_obj, "packaging_type", None)
-                    )
-
             p_count = int(item.pallet_count or 0)
             p_qty = Decimal(str(item.qty_per_pallet or 0))
             b_count = int(item.box_count or 0)
             b_qty = Decimal(str(item.qty_per_box or 0))
-
-            if line_is_pallet:
-                final_pallet_count = p_count or b_count
-                final_qty_per_pallet = p_qty or b_qty or (Decimal(str(qty)) / final_pallet_count if final_pallet_count else Decimal("0"))
-                final_box_count = 0
-                final_qty_per_box = Decimal("0")
-            else:
-                final_box_count = b_count or p_count
-                final_qty_per_box = b_qty or p_qty or (Decimal(str(qty)) / final_box_count if final_box_count else Decimal("0"))
-                final_pallet_count = 0
-                final_qty_per_pallet = Decimal("0")
 
             ring_wt = item.per_ring_weight if item.per_ring_weight is not None else (product.net_weight or Decimal("0"))
             line = RingsDocumentLine(
@@ -302,10 +272,10 @@ class RingsService:
                 location_id=location_id,
                 vendor_id=line_vendor_id,
                 heat_number=(item.heat_number or "").strip(),
-                pallet_count=final_pallet_count,
-                qty_per_pallet=final_qty_per_pallet,
-                box_count=final_box_count,
-                qty_per_box=final_qty_per_box,
+                pallet_count=p_count,
+                qty_per_pallet=p_qty,
+                box_count=b_count,
+                qty_per_box=b_qty,
                 quantity=qty,
                 short_quantity=item.short_quantity,
                 unit_rate=item.unit_rate,
@@ -555,6 +525,7 @@ class RingsService:
             supplier_document_date=payload.supplier_document_date or first.source_document_date,
             received_date=payload.received_date or first.received_date,
             transporter_name=payload.transporter_name or first.transporter_name,
+            vehicle_number=payload.vehicle_number,
             po_number=payload.po_number,
             packing_weight=packing,
             gross_weight=(ring_mass + packing).quantize(Decimal("0.001")),
@@ -567,6 +538,289 @@ class RingsService:
         await self.db.commit()
         saved = await self.repo.get_by_id(doc.id, company_id)
         return self._serialize(saved)
+
+    async def update_inward(
+        self,
+        inward_id: uuid.UUID,
+        payload: RingsInwardCreate,
+        company_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> RingsDocumentResponse:
+        inward = await self.repo.get_by_id(inward_id, company_id)
+        if not inward or inward.document_type != RingsDocumentType.INWARD.value:
+            raise NotFoundException("Rings inward not found")
+        if inward.status == RingsDocumentStatus.CANCELLED.value:
+            raise ConflictException("Deleted inward transactions cannot be edited")
+
+        warehouse = (
+            await self.db.execute(
+                select(Warehouse).where(
+                    Warehouse.id == payload.warehouse_id,
+                    Warehouse.company_id == company_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not warehouse:
+            raise NotFoundException("Warehouse not found")
+        vendor = await self._get_vendor(payload.vendor_id, company_id)
+        workflow = self._resolve_workflow(vendor, payload.workflow)
+        duplicate = await self.repo.find_duplicate_inward(
+            company_id, vendor.id, workflow, payload.supplier_document_number
+        )
+        if duplicate and duplicate.id != inward.id:
+            raise ConflictException(
+                f"Inward already exists for document {payload.supplier_document_number}",
+                error_code="DUPLICATE_INWARD",
+            )
+
+        await self._reverse_inward_stock(inward, company_id, user_id, "edit")
+        location = await self._default_location(payload.warehouse_id, company_id)
+        lines, ring_mass = await self._build_lines(
+            payload.lines, company_id, location.id, vendor=vendor
+        )
+        packing = payload.packing_weight or Decimal("0")
+
+        inward.warehouse_id = payload.warehouse_id
+        inward.vendor_id = vendor.id
+        inward.customer_id = payload.customer_id
+        inward.workflow = workflow
+        inward.status = RingsDocumentStatus.POSTED.value
+        inward.supplier_document_number = payload.supplier_document_number.strip()
+        inward.supplier_document_date = payload.supplier_document_date
+        inward.reference_date = payload.reference_date
+        inward.received_date = (
+            payload.received_date or payload.supplier_document_date or date.today()
+        )
+        inward.lr_number = payload.lr_number
+        inward.lr_date = payload.lr_date
+        inward.transporter_name = payload.transporter_name
+        inward.vehicle_number = payload.vehicle_number
+        inward.po_number = payload.po_number
+        inward.po_date = payload.po_date
+        inward.packing_weight = packing
+        inward.gross_weight = (ring_mass + packing).quantize(Decimal("0.001"))
+        inward.supplier_customer_invoice_number = payload.supplier_customer_invoice_number
+        inward.supplier_customer_invoice_date = payload.supplier_customer_invoice_date
+        inward.supplier_invoice_value = payload.supplier_invoice_value
+        inward.remarks = payload.remarks
+        inward.updated_by_id = user_id
+        inward.lines.clear()
+        inward.lines = lines
+        await self.db.flush()
+
+        receipt_lines = []
+        for line in lines:
+            heat = (line.heat_number or "").strip()
+            batch = heat or f"OPEN-{inward.document_number.replace('/', '-')}-{str(line.id)[:8]}"
+            receipt_lines.append(
+                StockReceiptLineCreate(
+                    product_id=line.product_id,
+                    uom_id=line.uom_id,
+                    destination_location_id=location.id,
+                    quantity=line.quantity,
+                    vendor_id=vendor.id,
+                    batch_number=batch,
+                    unit_cost=line.unit_rate,
+                    remarks=f"Rings inward {inward.document_number} heat {batch} (edit)",
+                )
+            )
+        ref_type = (
+            "SUPPLIER_CHALLAN"
+            if workflow == InvoiceWorkflow.JOB_WORK.value
+            else "SUPPLIER_INVOICE"
+        )
+        transaction = await InventoryService(self.db).process_receipt(
+            StockReceiptCreate(
+                warehouse_id=payload.warehouse_id,
+                partner_vendor_id=vendor.id,
+                reference_document_type=ref_type,
+                reference_document_number=payload.supplier_document_number.strip(),
+                remarks=f"Rings {workflow} inward {inward.document_number} (edit)",
+                lines=receipt_lines,
+            ),
+            company_id,
+            user_id,
+        )
+        inward.stock_transaction_id = transaction.id
+        await log_audit(
+            db=self.db,
+            user_id=user_id,
+            company_id=company_id,
+            action=AuditAction.UPDATE.value,
+            module="rings",
+            entity_name="RingsDocument",
+            entity_id=str(inward.id),
+            new_values={
+                "document_number": inward.document_number,
+                "supplier_document_number": inward.supplier_document_number,
+            },
+        )
+        await self.db.commit()
+        saved = await self.repo.get_by_id(inward.id, company_id)
+        return self._serialize(saved)
+
+    async def delete_inward(
+        self, inward_id: uuid.UUID, company_id: uuid.UUID, user_id: uuid.UUID
+    ) -> None:
+        inward = await self.repo.get_by_id(inward_id, company_id)
+        if not inward or inward.document_type != RingsDocumentType.INWARD.value:
+            raise NotFoundException("Rings inward not found")
+        if inward.status == RingsDocumentStatus.CANCELLED.value:
+            raise ConflictException("Rings inward is already deleted")
+        await self._reverse_inward_stock(inward, company_id, user_id, "delete")
+        inward.status = RingsDocumentStatus.CANCELLED.value
+        inward.updated_by_id = user_id
+        await log_audit(
+            db=self.db,
+            user_id=user_id,
+            company_id=company_id,
+            action=AuditAction.DELETE.value,
+            module="rings",
+            entity_name="RingsDocument",
+            entity_id=str(inward.id),
+            new_values={
+                "document_number": inward.document_number,
+                "status": RingsDocumentStatus.CANCELLED.value,
+            },
+        )
+        await self.db.commit()
+
+    async def _reverse_inward_stock(
+        self,
+        inward: RingsDocument,
+        company_id: uuid.UUID,
+        user_id: uuid.UUID,
+        reason: str,
+    ) -> None:
+        from app.core.constants import MoveState, TransactionStatus, TransactionType
+        from app.models.inventory import StockMove, StockTransaction
+
+        location = await self._default_location(inward.warehouse_id, company_id)
+        receipt_moves = []
+        if inward.stock_transaction_id:
+            receipt_moves = list(
+                (
+                    await self.db.execute(
+                        select(StockMove).where(
+                            StockMove.transaction_id == inward.stock_transaction_id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        used_move_ids = set()
+        adjustments = []
+        for line in inward.lines:
+            vendor_id = line.vendor_id or inward.vendor_id
+            batch = (line.heat_number or "").strip()
+            original_move = next(
+                (
+                    move
+                    for move in receipt_moves
+                    if move.id not in used_move_ids
+                    and move.product_id == line.product_id
+                    and move.vendor_id == vendor_id
+                ),
+                None,
+            )
+            if original_move:
+                used_move_ids.add(original_move.id)
+                batch = original_move.batch_number or batch
+            quant = await self.repo.find_heat_quant(
+                company_id=company_id,
+                warehouse_id=inward.warehouse_id,
+                vendor_id=vendor_id,
+                product_id=line.product_id,
+                heat_number=batch,
+                for_update=True,
+            )
+            if not quant and original_move:
+                quant = await self.inv_repo.get_quant(
+                    company_id=company_id,
+                    warehouse_id=inward.warehouse_id,
+                    location_id=original_move.destination_location_id,
+                    product_id=line.product_id,
+                    vendor_id=vendor_id,
+                    batch_number=batch,
+                    for_update=True,
+                )
+            if not quant or quant.quantity_available < line.quantity:
+                available = quant.quantity_available if quant else Decimal("0")
+                raise ConflictException(
+                    f"Cannot {reason} inward {inward.document_number}: heat {batch or '-'} "
+                    f"has only {available} available; {line.quantity} must be reversed. "
+                    "Cancel dependent picks/dispatches first.",
+                    error_code="INWARD_STOCK_ALREADY_USED",
+                )
+            adjustments.append((line, quant, vendor_id, batch))
+
+        trx_number = await SequenceGenerator.get_next_number(
+            self.db, document_type="RAD", company_id=company_id
+        )
+        transaction = StockTransaction(
+            company_id=company_id,
+            warehouse_id=inward.warehouse_id,
+            transaction_number=trx_number,
+            transaction_type=TransactionType.ADJUSTMENT.value,
+            status=TransactionStatus.COMPLETED.value,
+            reference_document_type="RINGS_INWARD_VOID",
+            reference_document_number=inward.document_number,
+            partner_vendor_id=inward.vendor_id,
+            remarks=f"Reverse rings inward {inward.document_number} ({reason})",
+            confirmed_at=datetime.now(UTC),
+            confirmed_by_id=user_id,
+            created_by_id=user_id,
+        )
+        self.db.add(transaction)
+        await self.db.flush()
+
+        for line, quant, vendor_id, batch in adjustments:
+            quant.quantity_on_hand -= line.quantity
+            quant.quantity_available = quant.quantity_on_hand - quant.quantity_reserved
+            quant.last_movement_at = datetime.now(UTC)
+            loc_id = quant.location_id or line.location_id or location.id
+            move = StockMove(
+                company_id=company_id,
+                transaction_id=transaction.id,
+                product_id=line.product_id,
+                uom_id=line.uom_id,
+                source_location_id=loc_id,
+                destination_location_id=loc_id,
+                quantity=line.quantity,
+                vendor_id=vendor_id,
+                batch_number=batch,
+                unit_cost=line.unit_rate,
+                state=MoveState.DONE.value,
+                remarks=f"Reverse inward {inward.document_number} heat {batch}",
+                created_by_id=user_id,
+            )
+            self.db.add(move)
+            await self.db.flush()
+            running = await self.inv_repo.get_latest_running_balance(
+                company_id=company_id,
+                location_id=loc_id,
+                product_id=line.product_id,
+                vendor_id=vendor_id,
+                batch_number=batch,
+            )
+            await self.inv_repo.append_ledger_entry(
+                company_id=company_id,
+                warehouse_id=inward.warehouse_id,
+                location_id=loc_id,
+                product_id=line.product_id,
+                uom_id=line.uom_id,
+                transaction_id=transaction.id,
+                move_id=move.id,
+                entry_type="OUT",
+                quantity_delta=-line.quantity,
+                running_balance=running - line.quantity,
+                vendor_id=vendor_id,
+                batch_number=batch,
+                unit_cost=line.unit_rate,
+                total_value=basic_value(line.quantity, line.unit_rate),
+                reference=f"RINGS_INWARD_VOID:{inward.document_number}",
+            )
 
     async def update_pick(
         self,
@@ -644,6 +898,7 @@ class RingsService:
         pick.supplier_document_date = payload.supplier_document_date or first.source_document_date
         pick.received_date = payload.received_date or first.received_date
         pick.transporter_name = payload.transporter_name or first.transporter_name
+        pick.vehicle_number = payload.vehicle_number
         pick.po_number = payload.po_number
         pick.packing_weight = packing
         pick.gross_weight = (ring_mass + packing).quantize(Decimal("0.001"))
@@ -961,7 +1216,7 @@ class RingsService:
             supplier_document_number=pick.supplier_document_number,
             supplier_document_date=pick.supplier_document_date,
             received_date=pick.received_date,
-            transporter_name=pick.transporter_name,
+            transporter_name=payload.transporter_name or pick.transporter_name,
             vehicle_number=payload.vehicle_number or pick.vehicle_number,
             eway_bill_number=payload.eway_bill_number,
             po_number=payload.po_number or pick.po_number,
@@ -1115,11 +1370,15 @@ class RingsService:
             page=1,
             page_size=500,
         )
+        from app.models.sales_tax_tracking import SalesTaxInvoiceTracking
+        tracking_rows = list((await self.db.scalars(select(SalesTaxInvoiceTracking).where(SalesTaxInvoiceTracking.company_id == company_id, SalesTaxInvoiceTracking.is_active.is_(True)))).all())
+        tracking_by_challan = {row.delivery_challan_id: row for row in tracking_rows}
         result: list[RingsSalesRow] = []
         for doc in rows:
             if customer_id and doc.customer_id != customer_id:
                 continue
             for line in doc.lines or []:
+                tracking = tracking_by_challan.get(doc.id)
                 line_gross = (
                     (line.quantity or 0) * (line.per_ring_weight or 0) + (doc.packing_weight or 0)
                 ).quantize(Decimal("0.001"))
@@ -1154,6 +1413,11 @@ class RingsService:
                         line_gross_weight=line_gross,
                         gross_weight=doc.gross_weight,
                         dispatch_date=doc.sln_challan_date or doc.created_at.date(),
+                        sales_tax_invoice_number=tracking.invoice_number if tracking else None,
+                        sales_tax_invoice_date=tracking.invoice_date if tracking else None,
+                        sales_tax_invoice_amount=tracking.invoice_amount if tracking else None,
+                        sales_tax_tracking_status="RECEIVED" if tracking else "PENDING",
+                        sales_tax_invoice_remarks=tracking.remarks if tracking else None,
                     )
                 )
         return result

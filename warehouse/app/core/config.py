@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 
     HOST: str = "0.0.0.0"
     PORT: int = 8000
+    UPLOAD_DIR: str = "uploads"
 
     DATABASE_URL: str = Field(
         default="postgresql+asyncpg://odoo:odoo@localhost:5433/sln_warehouse",

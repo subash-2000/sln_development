@@ -4,6 +4,7 @@ from app.models.base import BaseEntity
 from app.models.billing import (
     BillingDocument,
     BillingLine,
+    BillingManualCharge,
     BillingPeriod,
     RateCard,
     RateCardItem,
@@ -17,6 +18,9 @@ from app.models.consignment import (
     VendorTitleTransferLine,
 )
 from app.models.customer import Customer
+from app.models.credit_debit import CustomerCreditDebitNote
+from app.models.einvoice import EInvoiceApiLog, EInvoiceConfiguration, EInvoiceDocument
+from app.models.sales_tax_tracking import SalesTaxInvoiceTracking
 from app.models.inventory import StockLedger, StockMove, StockQuant, StockTransaction
 from app.models.invoicing import Invoice, InvoiceLine, InvoicePayment
 from app.models.jobwork import (
@@ -53,6 +57,10 @@ __all__ = [
     "Sequence",
     "Vendor",
     "Customer",
+    "CustomerCreditDebitNote",
+    "EInvoiceConfiguration",
+    "EInvoiceDocument",
+    "EInvoiceApiLog",
     "UomCategory",
     "UOM",
     "Tax",
@@ -82,6 +90,8 @@ __all__ = [
     "BillingPeriod",
     "BillingDocument",
     "BillingLine",
+    "BillingManualCharge",
+    "SalesTaxInvoiceTracking",
     "Invoice",
     "InvoiceLine",
     "InvoicePayment",

@@ -111,6 +111,7 @@ export const ENDPOINTS = {
   },
   RINGS: {
     INWARD: '/rings/inward',
+    INWARD_DETAIL: (id) => `/rings/inward/${id}`,
     SUPPLIER_TYPES: '/rings/supplier-types',
     PICKS: '/rings/picks',
     PICK: (id) => `/rings/picks/${id}`,
@@ -142,10 +143,34 @@ export const ENDPOINTS = {
   BILLING: {
     PERIODS: '/billing/periods',
     DOCUMENTS: '/billing/documents',
+    CALCULATE: '/billing/calculate',
+    DOCUMENT: (id) => `/billing/documents/${id}`,
+    CONFIRM: (id) => `/billing/documents/${id}/confirm`,
+    MANUAL_CHARGES: (id) => `/billing/documents/${id}/manual-charges`,
+    MONTH_END_RUN: '/billing/month-end/run',
   },
+  CREDIT_DEBIT: {
+    LIST: '/credit-debit-notes',
+    SUMMARY: '/credit-debit-notes/summary',
+    DETAIL: (id) => `/credit-debit-notes/${id}`,
+    CONFIRM: (id) => `/credit-debit-notes/${id}/confirm`,
+    CANCEL: (id) => `/credit-debit-notes/${id}/cancel`,
+  },
+  SALES_TAX_TRACKING: '/sales-tax-invoices',
   INVOICING: {
     LIST: '/invoicing/invoices',
     DETAIL: (id) => `/invoicing/invoices/${id}`,
+  },
+  EINVOICE: {
+    CONFIGURATION: '/einvoice/configuration',
+    DOCUMENTS: '/einvoice/documents',
+    DOCUMENT: (id) => `/einvoice/documents/${id}`,
+    GENERATE_IRN: (id) => `/einvoice/documents/${id}/generate-irn`,
+    CANCEL_IRN: (id) => `/einvoice/documents/${id}/cancel-irn`,
+    GENERATE_EWAYBILL: (id) => `/einvoice/documents/${id}/generate-ewaybill`,
+    CANCEL_EWAYBILL: (id) => `/einvoice/documents/${id}/cancel-ewaybill`,
+    UPDATE_VEHICLE: (id) => `/einvoice/documents/${id}/update-vehicle`,
+    LOGS: '/einvoice/logs',
   },
   RETURNS: {
     LIST: '/returns',

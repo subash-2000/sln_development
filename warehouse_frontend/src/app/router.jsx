@@ -21,6 +21,7 @@ import { transportRoutes } from '../modules/transport/routes';
 import { productRoutes } from '../modules/products/routes';
 import { billingRoutes } from '../modules/billing/routes';
 import { invoicingRoutes } from '../modules/invoicing/routes';
+import { einvoiceRoutes } from '../modules/einvoice/routes';
 import { returnsRoutes } from '../modules/rejection-returns/routes';
 import { reportRoutes } from '../modules/reports/routes';
 import { auditRoutes } from '../modules/audit/routes';
@@ -243,6 +244,11 @@ export const AppRouter = () => {
                 />
               ))}
             </Route>
+          ))}
+
+          {/* Rejection & Returns Module */}
+          {einvoiceRoutes.map((route) => (
+            <Route key={route.path} path={route.path} element={route.element} />
           ))}
 
           {/* Rejection & Returns Module */}

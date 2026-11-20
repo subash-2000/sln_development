@@ -91,6 +91,10 @@ export const ringsApi = {
     unwrapList(await apiClient.get(ENDPOINTS.RINGS.DOCUMENTS, { params: buildListParams(params) })),
   getDocument: async (id) => unwrapData(await apiClient.get(ENDPOINTS.RINGS.DOCUMENT(id))),
   createInward: async (data) => unwrapData(await apiClient.post(ENDPOINTS.RINGS.INWARD, data)),
+  updateInward: async (id, data) =>
+    unwrapData(await apiClient.put(ENDPOINTS.RINGS.INWARD_DETAIL(id), data)),
+  deleteInward: async (id) =>
+    unwrapData(await apiClient.delete(ENDPOINTS.RINGS.INWARD_DETAIL(id))),
   supplierTypes: async (vendorId) =>
     unwrapData(await apiClient.get(ENDPOINTS.RINGS.SUPPLIER_TYPES, { params: { vendor_id: vendorId } })),
   createPick: async (data) => unwrapData(await apiClient.post(ENDPOINTS.RINGS.PICKS, data)),

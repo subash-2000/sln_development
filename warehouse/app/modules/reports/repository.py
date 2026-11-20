@@ -377,6 +377,9 @@ class ReportingRepository:
     ) -> List[dict]:
         """Fetch Inward Summary (Stock Receipts)."""
         from app.core.constants import TransactionType
+        from app.models.rings import RingsDocument, RingsDocumentLine
+
+        net_weight = StockMove.quantity * func.coalesce(RingsDocumentLine.per_ring_weight, 0)
         stmt = (
             select(
                 StockTransaction.transaction_number,
@@ -386,12 +389,43 @@ class ReportingRepository:
                 Product.name.label("product_name"),
                 UOM.code.label("uom_code"),
                 StockMove.quantity,
-                StockTransaction.status
+                StockTransaction.status,
+                RingsDocument.supplier_document_number.label("challan_number"),
+                func.coalesce(RingsDocumentLine.pallet_count, 0).label("total_pallets"),
+                func.coalesce(RingsDocumentLine.qty_per_pallet, 0).label("qty_per_pallet"),
+                func.coalesce(RingsDocumentLine.box_count, 0).label("total_boxes"),
+                func.coalesce(RingsDocumentLine.qty_per_box, 0).label("qty_per_box"),
+                func.coalesce(RingsDocumentLine.per_ring_weight, 0).label("ring_weight"),
+                func.coalesce(net_weight, 0).label("net_weight"),
+                func.coalesce(RingsDocumentLine.packing_weight, 0).label("packing_weight"),
+                (
+                    func.coalesce(net_weight, 0)
+                    + func.coalesce(RingsDocumentLine.packing_weight, 0)
+                ).label("gross_weight"),
+                func.coalesce(RingsDocumentLine.remarks, RingsDocument.remarks).label("remark"),
+                func.coalesce(
+                    RingsDocumentLine.transporter_name,
+                    RingsDocument.transporter_name,
+                ).label("transporter_name"),
+                func.coalesce(RingsDocumentLine.lr_number, RingsDocument.lr_number).label("lr_number"),
+                func.coalesce(RingsDocumentLine.unit_rate, StockMove.unit_cost, 0).label("rate"),
             )
             .join(StockMove, StockTransaction.id == StockMove.transaction_id)
             .join(Product, StockMove.product_id == Product.id)
             .join(UOM, StockMove.uom_id == UOM.id)
             .outerjoin(Vendor, StockTransaction.partner_vendor_id == Vendor.id)
+            .outerjoin(
+                RingsDocument,
+                RingsDocument.stock_transaction_id == StockTransaction.id,
+            )
+            .outerjoin(
+                RingsDocumentLine,
+                and_(
+                    RingsDocumentLine.document_id == RingsDocument.id,
+                    RingsDocumentLine.product_id == StockMove.product_id,
+                    RingsDocumentLine.heat_number == StockMove.batch_number,
+                ),
+            )
             
             .where(StockTransaction.transaction_type == TransactionType.RECEIPT.value)
         )
@@ -421,7 +455,7 @@ class ReportingRepository:
         if filters.date_to:
             stmt = stmt.where(func.cast(StockTransaction.confirmed_at, Date) <= filters.date_to)
 
-        stmt = stmt.order_by(desc(StockTransaction.confirmed_at), StockTransaction.transaction_number)
+        stmt = stmt.order_by(Product.sku.asc(), StockTransaction.transaction_number.asc())
         stmt = stmt.offset(skip).limit(limit)
 
         result = await self.db.execute(stmt)

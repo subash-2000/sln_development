@@ -105,6 +105,8 @@ const RingsPickCreatePage = () => {
       workflow: 'JOB_WORK',
       customer_id: '',
       po_number: '',
+      transporter_name: '',
+      vehicle_number: '',
       lines: [emptyLine()],
     },
   });
@@ -154,6 +156,8 @@ const RingsPickCreatePage = () => {
       workflow: existingPick.workflow || 'JOB_WORK',
       customer_id: existingPick.customer_id || '',
       po_number: existingPick.po_number || '',
+      transporter_name: existingPick.transporter_name || '',
+      vehicle_number: existingPick.vehicle_number || '',
       lines: mappedLines.length ? mappedLines : [emptyLine()],
     });
     hydratedRef.current = true;
@@ -490,10 +494,11 @@ const RingsPickCreatePage = () => {
         workflow: workflow && workflow !== 'STANDARD' ? workflow : 'JOB_WORK',
         customer_id: form.customer_id || null,
         po_number: form.po_number || null,
+        transporter_name: String(form.transporter_name || '').trim() || null,
+        vehicle_number: String(form.vehicle_number || '').trim() || null,
         supplier_document_number: first.invoice_number || first.heat_number || 'PICK',
         supplier_document_date: first.invoice_date ? String(first.invoice_date).trim() : null,
         received_date: first.received_date ? String(first.received_date).trim() : null,
-        transporter_name: first.transporter_name ? String(first.transporter_name).trim() : null,
         packing_weight: totalPacking,
         lines: filled.map((line) => {
           const pallets = Math.round(Number(line.pallet_count || 0));
@@ -622,6 +627,22 @@ const RingsPickCreatePage = () => {
                 placeholder="PO number"
                 className="h-9 text-sm"
                 onChange={(e) => setValue('po_number', e.target.value, { shouldDirty: true })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700">Transporter ID</label>
+              <Input
+                placeholder="Transporter ID / name"
+                className="h-9 text-sm"
+                {...register('transporter_name')}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700">Vehicle Number</label>
+              <Input
+                placeholder="Vehicle number"
+                className="h-9 text-sm"
+                {...register('vehicle_number')}
               />
             </div>
           </Card.Body>

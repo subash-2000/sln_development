@@ -18,10 +18,21 @@ from app.modules.billing.schemas import (
     BillingPeriodCreate,
     BillingPeriodResponse,
     CalculateBillingRequest,
+    ManualChargeCreate,
+    MonthEndRunRequest,
+    MonthEndRunResponse,
 )
 from app.modules.billing.service import BillingService
 
 router = APIRouter(prefix="/billing", tags=["Billing & Rating Engine"])
+
+
+@router.post("/month-end/run", response_model=StandardResponse[MonthEndRunResponse], summary="Run idempotent monthly billing generation")
+async def run_month_end(payload: MonthEndRunRequest, context: TenantContext = Depends(get_current_tenant_context), current_user: User = Depends(require_permission("billing.calculate")), db: AsyncSession = Depends(get_db)):
+    if not context.company_id:
+        raise BadRequestException("Company ID is required")
+    result = await BillingService(db).run_month_end(payload.year, payload.month, payload.warehouse_id, current_user.id, context.company_id)
+    return success_response(data=result.model_dump(mode="json"), message="Month-end billing run completed")
 
 
 # ==========================================
@@ -38,7 +49,7 @@ router = APIRouter(prefix="/billing", tags=["Billing & Rating Engine"])
 async def create_billing_period(
     payload: BillingPeriodCreate,
     context: TenantContext = Depends(get_current_tenant_context),
-    current_user: User = Depends(require_permission("billing.write")),
+    current_user: User = Depends(require_permission("billing.calculate")),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     if not context.company_id:
@@ -122,7 +133,7 @@ async def get_billing_period(
 async def calculate_billing(
     payload: CalculateBillingRequest,
     context: TenantContext = Depends(get_current_tenant_context),
-    current_user: User = Depends(require_permission("billing.write")),
+    current_user: User = Depends(require_permission("billing.calculate")),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     if not context.company_id:
@@ -148,7 +159,7 @@ async def calculate_billing(
 async def confirm_billing_document(
     document_id: uuid.UUID,
     context: TenantContext = Depends(get_current_tenant_context),
-    current_user: User = Depends(require_permission("billing.write")),
+    current_user: User = Depends(require_permission("invoice.post")),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     if not context.company_id:
@@ -226,3 +237,10 @@ async def get_billing_document(
         company_id=context.company_id,
     )
     return success_response(data=result.model_dump(mode="json"))
+
+
+@router.post("/documents/{document_id}/manual-charges", response_model=StandardResponse[BillingDocumentResponse])
+async def add_manual_charge(document_id: uuid.UUID, payload: ManualChargeCreate, context: TenantContext = Depends(get_current_tenant_context), current_user: User = Depends(require_permission("billing.calculate")), db: AsyncSession = Depends(get_db)):
+    if not context.company_id: raise BadRequestException("Company ID is required")
+    result = await BillingService(db).add_manual_charge(document_id, payload, current_user.id, context.company_id)
+    return success_response(data=result.model_dump(mode="json"), message="Manual charge added")

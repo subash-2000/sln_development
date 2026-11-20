@@ -94,57 +94,37 @@ export const exportInwardReportToExcel = async (items = [], filters = {}) => {
     ws.columns = [
       { width: 4 },   // A (spacer)
       { width: 18 },  // B: TYPES
-      { width: 16 },  // C: DC NO
-      { width: 14 },  // D: DATE
-      { width: 14 },  // E: L.R. NO
-      { width: 14 },  // F: DATE
-      { width: 19 },  // G: TRANSPORTER
-      { width: 16 },  // H: REC.DATE
-      { width: 12 },  // I: Total Boxes
-      { width: 22 },  // J: Box * Qty
-      { width: 14 },  // K: QTY (in Nos)
-      { width: 10 },  // L: RATE
-      { width: 16 },  // M: BASIC VALUE
-      { width: 17 },  // N: W/H INVOICE NO
-      { width: 14 },  // O: DATE
-      { width: 12 },  // P: Total Boxes
-      { width: 18 },  // Q: Box * Qty
-      { width: 14 },  // R: QTY Lifted
-      { width: 14 },  // S: DATE
-      { width: 14 },  // T: BAL.QTY
+      { width: 18 }, { width: 18 }, { width: 14 }, { width: 14 }, { width: 14 },
+      { width: 19 }, { width: 16 }, { width: 12 }, { width: 16 }, { width: 12 },
+      { width: 16 }, { width: 14 }, { width: 10 }, { width: 16 }, { width: 14 },
+      { width: 14 }, { width: 16 }, { width: 14 }, { width: 24 },
     ];
 
     const vendorLabel = filters.vendor_name ? ` - ${filters.vendor_name.toUpperCase()}` : '';
     const dateRangeLabel = (filters.date_from && filters.date_to) ? ` (${filters.date_from} TO ${filters.date_to})` : ` AS ON ${dateStr}`;
 
     // Row 2: Title
-    ws.mergeCells('B2:T2');
+    ws.mergeCells('B2:U2');
     const titleCell = ws.getCell('B2');
     titleCell.value = `RECEIPT STATEMENT${vendorLabel}${dateRangeLabel}.`;
     titleCell.font = { name: 'Bookman Old Style', size: 14, bold: true };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
     // Row 3: Banners
-    ws.mergeCells('B3:M3');
+    ws.mergeCells('B3:U3');
     const inwordBanner = ws.getCell('B3');
-    inwordBanner.value = 'INWORD';
+    inwordBanner.value = 'INWARD';
     inwordBanner.font = { name: 'Bookman Old Style', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
     inwordBanner.alignment = { horizontal: 'center', vertical: 'middle' };
     inwordBanner.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00B0F0' } };
 
-    ws.mergeCells('N3:T3');
-    const outwordBanner = ws.getCell('N3');
-    outwordBanner.value = 'OUTWORD';
-    outwordBanner.font = { name: 'Bookman Old Style', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
-    outwordBanner.alignment = { horizontal: 'center', vertical: 'middle' };
-    outwordBanner.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00B0F0' } };
-
     // Row 4: Column Headers
     const headers = [
       '', // A
-      'TYPES', 'DC NO', 'DATE', 'L.R. NO', 'DATE', 'TRANSPORTER', 'REC.DATE',
-      'Total Boxes', 'Box * Qty', 'QTY (in Nos)', 'RATE', 'BASIC VALUE',
-      ' W/H INVOICE NO', 'DATE', 'Total Boxes', 'Box * Qty', 'QTY Lifted', 'DATE', 'BAL.QTY'
+      'TYPES', 'CHALLAN NUMBER', 'GRN NUMBER', 'DATE', 'L.R. NO', 'DATE',
+      'TRANSPORTER', 'REC.DATE', 'Total Pallet', 'Pallets *Qty', 'Total Boxes',
+      'Box * Qty', 'QTY (in Nos)', 'RATE', 'BASIC VALUE', 'RING WEIGHT',
+      'NET WEIGHT', 'PACKING WEIGHT', 'GROSS WEIGHT', 'REMARK'
     ];
     const headerRow = ws.getRow(4);
     headers.forEach((h, idx) => {
@@ -165,34 +145,57 @@ export const exportInwardReportToExcel = async (items = [], filters = {}) => {
 
     // Data rows starting at row 5
     let currRow = 5;
-    items.forEach((item) => {
+    const sortedItems = [...items].sort((a, b) => {
+      const typeCompare = String(a.product_code || a.sku || a.product_name || '').localeCompare(
+        String(b.product_code || b.sku || b.product_name || ''), undefined, { numeric: true, sensitivity: 'base' }
+      );
+      if (typeCompare) return typeCompare;
+      return String(a.transaction_number || '').localeCompare(String(b.transaction_number || ''), undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      });
+    });
+    const longestType = sortedItems.reduce(
+      (max, item) => Math.max(max, String(item.product_code || item.sku || item.product_name || '').length),
+      'TYPES'.length
+    );
+    ws.getColumn(2).width = Math.min(Math.max(longestType + 3, 24), 60);
+    sortedItems.forEach((item) => {
       const row = ws.getRow(currRow);
       const sku = item.product_code || item.sku || item.product_name || '-';
-      const dcNo = item.transaction_number || item.reference_number || '-';
+      const challanNo = item.challan_number || item.reference_number || '-';
+      const grnNo = item.transaction_number || '-';
       const recDate = formatDate(item.confirmed_at || item.receipt_date || item.movement_date);
-      const transporter = item.transporter_name || 'SP ROADLINES';
+      const transporter = item.transporter_name || '-';
       const qty = Number(item.quantity) || Number(item.dispatched_qty) || 0;
-      const rate = Number(item.rate) || 10.03;
-      const boxes = Number(item.total_boxes) || 1;
-      const lrNo = item.lr_number || 12850;
+      const rate = Number(item.rate) || 0;
+      const pallets = Number(item.total_pallets) || 0;
+      const qtyPerPallet = Number(item.qty_per_pallet) || 0;
+      const boxes = Number(item.total_boxes) || 0;
+      const qtyPerBox = Number(item.qty_per_box) || 0;
+      const lrNo = item.lr_number || '-';
 
       row.getCell(2).value = sku;
-      row.getCell(3).value = dcNo;
-      row.getCell(4).value = recDate;
-      row.getCell(5).value = lrNo;
-      row.getCell(6).value = recDate;
-      row.getCell(7).value = transporter;
-      row.getCell(8).value = recDate;
-      row.getCell(9).value = boxes;
-      row.getCell(10).value = `${boxes}*${qty}`;
-      row.getCell(11).value = qty;
-      row.getCell(12).value = rate;
-      row.getCell(13).value = { formula: `=+K${currRow}*L${currRow}` };
-      row.getCell(18).value = 0;
-      row.getCell(19).value = 'P';
-      row.getCell(20).value = { formula: `=+K${currRow}-R${currRow}` };
-
-      for (let c = 2; c <= 20; c++) {
+      row.getCell(3).value = challanNo;
+      row.getCell(4).value = grnNo;
+      row.getCell(5).value = recDate;
+      row.getCell(6).value = lrNo;
+      row.getCell(7).value = recDate;
+      row.getCell(8).value = transporter;
+      row.getCell(9).value = recDate;
+      row.getCell(10).value = pallets;
+      row.getCell(11).value = pallets ? `${pallets}*${qtyPerPallet}` : '';
+      row.getCell(12).value = boxes;
+      row.getCell(13).value = boxes ? `${boxes}*${qtyPerBox}` : '';
+      row.getCell(14).value = qty;
+      row.getCell(15).value = rate;
+      row.getCell(16).value = { formula: `=N${currRow}*O${currRow}` };
+      row.getCell(17).value = Number(item.ring_weight) || 0;
+      row.getCell(18).value = Number(item.net_weight) || 0;
+      row.getCell(19).value = Number(item.packing_weight) || 0;
+      row.getCell(20).value = Number(item.gross_weight) || 0;
+      row.getCell(21).value = item.remark || '';
+      for (let c = 2; c <= 21; c++) {
         const cell = row.getCell(c);
         cell.font = { name: 'Bookman Old Style', size: 10, bold: c === 2 };
         cell.border = {
@@ -201,31 +204,30 @@ export const exportInwardReportToExcel = async (items = [], filters = {}) => {
           bottom: { style: 'thin', color: { argb: 'FFD3D3D3' } },
           right: { style: 'thin', color: { argb: 'FFD3D3D3' } },
         };
-        if ([9, 11, 12, 13, 18, 20].includes(c)) {
+        if ([10, 12, 14, 15, 16, 17, 18, 19, 20].includes(c)) {
           cell.alignment = { horizontal: 'right' };
-        } else if ([4, 6, 8, 19].includes(c)) {
+        } else if ([5, 7, 9].includes(c)) {
           cell.alignment = { horizontal: 'center' };
         }
       }
+      row.getCell(2).alignment = { horizontal: 'left', vertical: 'middle', wrapText: false, shrinkToFit: false };
       currRow++;
     });
 
     const lastDataRow = Math.max(currRow - 1, 5);
     const totRowIdx = currRow + 1;
-    ws.mergeCells(`B${totRowIdx}:H${totRowIdx}`);
+    ws.mergeCells(`B${totRowIdx}:I${totRowIdx}`);
     const totLabel = ws.getCell(`B${totRowIdx}`);
     totLabel.value = 'Total';
     totLabel.font = { name: 'Bookman Old Style', size: 10, bold: true };
     totLabel.alignment = { horizontal: 'center', vertical: 'middle' };
 
     const totRow = ws.getRow(totRowIdx);
-    totRow.getCell(9).value = { formula: `=SUM(I5:I${lastDataRow})` };
-    totRow.getCell(11).value = { formula: `=SUM(K5:K${lastDataRow})` };
-    totRow.getCell(13).value = { formula: `=SUM(M5:M${lastDataRow})` };
-    totRow.getCell(18).value = { formula: `=SUM(R5:R${lastDataRow})` };
-    totRow.getCell(20).value = { formula: `=SUM(T5:T${lastDataRow})` };
-
-    for (let c = 2; c <= 20; c++) {
+    [10, 12, 14, 16, 18, 19, 20].forEach((column) => {
+      const letter = ws.getColumn(column).letter;
+      totRow.getCell(column).value = { formula: `=SUM(${letter}5:${letter}${lastDataRow})` };
+    });
+    for (let c = 2; c <= 21; c++) {
       const cell = totRow.getCell(c);
       cell.font = { name: 'Bookman Old Style', size: 10, bold: true };
       cell.border = {

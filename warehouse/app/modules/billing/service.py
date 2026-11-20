@@ -1,7 +1,10 @@
 import uuid
+import calendar
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.core.audit import get_audit_names, log_audit
 from app.core.constants import (
@@ -16,7 +19,7 @@ from app.core.constants import (
 from app.core.exceptions import ConflictException, NotFoundException, ValidationException
 from app.core.pagination import PaginationParams
 from app.core.sequence import SequenceGenerator
-from app.models.billing import BillingDocument, BillingLine, BillingPeriod
+from app.models.billing import BillingDocument, BillingLine, BillingManualCharge, BillingPeriod, RateCard
 from app.models.warehouse import Warehouse
 from app.modules.billing.repository import BillingRepository
 from app.modules.billing.schemas import (
@@ -25,6 +28,8 @@ from app.modules.billing.schemas import (
     BillingPeriodCreate,
     BillingPeriodResponse,
     CalculateBillingRequest,
+    ManualChargeResponse,
+    MonthEndRunResponse,
 )
 
 
@@ -113,6 +118,10 @@ class BillingService:
         period = await self.repo.get_billing_period_by_id(payload.billing_period_id, company_id)
         if not period:
             raise NotFoundException(f"Billing period with ID {payload.billing_period_id} not found")
+        if payload.customer_id:
+            existing = await self.db.scalar(select(BillingDocument).where(BillingDocument.company_id == company_id, BillingDocument.customer_id == payload.customer_id, BillingDocument.billing_period_id == payload.billing_period_id, BillingDocument.status != BillingDocumentStatus.CANCELLED.value))
+            if existing:
+                raise ConflictException("A monthly bill already exists for this customer and billing period")
 
         # Validate Warehouse
         wh_stmt = await self.db.get(Warehouse, payload.warehouse_id)
@@ -124,6 +133,7 @@ class BillingService:
             company_id=company_id,
             rate_card_id=payload.rate_card_id,
             vendor_id=payload.vendor_id,
+            customer_id=payload.customer_id,
         )
         if not rate_card:
             raise NotFoundException("No active rate card found for this billing calculation")
@@ -148,6 +158,8 @@ class BillingService:
                     company_id=company_id,
                     warehouse_id=payload.warehouse_id,
                     vendor_id=payload.vendor_id,
+                    customer_id=payload.customer_id,
+                    calculation_basis=item.calculation_basis,
                 )
 
                 if item.calculation_basis in (
@@ -183,6 +195,8 @@ class BillingService:
                     company_id=company_id,
                     warehouse_id=payload.warehouse_id,
                     vendor_id=payload.vendor_id,
+                    customer_id=payload.customer_id,
+                    calculation_basis=item.calculation_basis,
                     start_date=period.start_date,
                     end_date=period.end_date,
                 )
@@ -209,6 +223,8 @@ class BillingService:
                     company_id=company_id,
                     warehouse_id=payload.warehouse_id,
                     vendor_id=payload.vendor_id,
+                    customer_id=payload.customer_id,
+                    calculation_basis=item.calculation_basis,
                     start_date=period.start_date,
                     end_date=period.end_date,
                 )
@@ -442,6 +458,7 @@ class BillingService:
             total_amount=doc.total_amount,
             notes=doc.notes,
             lines=lines_resp,
+            manual_charges=[ManualChargeResponse.model_validate(charge) for charge in doc.manual_charges],
             created_at=doc.created_at,
             updated_at=doc.updated_at,
             created_by_id=doc.created_by_id,
@@ -449,3 +466,80 @@ class BillingService:
             created_by=created_by,
             updated_by=updated_by,
         )
+
+    async def add_manual_charge(self, doc_id, payload, user_id, company_id):
+        doc = await self.repo.get_billing_document_by_id(doc_id, company_id)
+        if not doc: raise NotFoundException("Billing document not found")
+        if doc.status != BillingDocumentStatus.DRAFT.value: raise ConflictException("Manual charges can only be changed on draft bills")
+        amount = (payload.quantity * payload.rate).quantize(Decimal("0.0001"))
+        charge = BillingManualCharge(billing_document_id=doc.id, description=payload.description.strip(), quantity=payload.quantity, rate=payload.rate, amount=amount, remarks=payload.remarks, created_by_id=user_id)
+        self.db.add(charge)
+        doc.total_vas_charges += amount; doc.subtotal_amount += amount; doc.total_amount += amount; doc.updated_by_id = user_id
+        await self.db.commit()
+        return self._build_document_response(await self.repo.get_billing_document_by_id(doc.id, company_id))
+
+    async def run_month_end(self, year: int, month: int, warehouse_id, user_id, company_id):
+        """Generate one draft bill per active customer rate card; safe to rerun."""
+        start = date(year, month, 1)
+        end = date(year, month, calendar.monthrange(year, month)[1])
+        period_name = f"{year:04d}-{month:02d}"
+        period = await self.repo.get_billing_period_by_name(period_name, company_id)
+        if not period:
+            period = BillingPeriod(
+                company_id=company_id,
+                period_name=period_name,
+                start_date=start,
+                end_date=end,
+                billing_cycle=AgreementBillingCycle.MONTHLY.value,
+                status=BillingPeriodStatus.OPEN.value,
+                notes="Generated by month-end billing run",
+                created_by_id=user_id,
+            )
+            period = await self.repo.create_billing_period(period)
+
+        warehouse = await self.db.get(Warehouse, warehouse_id) if warehouse_id else await self.db.scalar(
+            select(Warehouse).where(
+                Warehouse.company_id == company_id,
+                Warehouse.is_active.is_(True),
+            ).order_by(Warehouse.name)
+        )
+        if not warehouse or warehouse.company_id != company_id:
+            raise NotFoundException("No active warehouse is available for month-end billing")
+
+        cards = list((await self.db.scalars(
+            select(RateCard).where(
+                RateCard.company_id == company_id,
+                RateCard.customer_id.is_not(None),
+                RateCard.status == EntityStatus.ACTIVE.value,
+                RateCard.is_active.is_(True),
+                RateCard.valid_from <= end,
+                (RateCard.valid_to.is_(None) | (RateCard.valid_to >= start)),
+            ).order_by(RateCard.customer_id, RateCard.valid_from.desc())
+        )).all())
+        generated = 0
+        skipped = 0
+        seen = set()
+        for card in cards:
+            if card.customer_id in seen:
+                continue
+            seen.add(card.customer_id)
+            exists = await self.db.scalar(select(BillingDocument.id).where(
+                BillingDocument.company_id == company_id,
+                BillingDocument.billing_period_id == period.id,
+                BillingDocument.customer_id == card.customer_id,
+                BillingDocument.status != BillingDocumentStatus.CANCELLED.value,
+            ))
+            if exists:
+                skipped += 1
+                continue
+            await self.calculate_billing(CalculateBillingRequest(
+                billing_period_id=period.id,
+                warehouse_id=warehouse.id,
+                customer_id=card.customer_id,
+                rate_card_id=card.id,
+                tax_rate_percent=Decimal("0"),
+                notes="Automated month-end draft",
+            ), user_id, company_id)
+            generated += 1
+        await self.db.commit()
+        return MonthEndRunResponse(period_id=period.id, period_name=period_name, generated=generated, skipped_existing=skipped)

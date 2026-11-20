@@ -84,6 +84,7 @@ const menuItems = [
     items: [
       { icon: Receipt, label: 'Billing', path: '/billing' },
       { icon: FileSpreadsheet, label: 'Invoicing & GST', path: '/invoicing' },
+      { icon: FileText, label: 'E-Invoice & E-Way Bill', path: '/finance/einvoice' },
     ]
   },
   { 

@@ -8,13 +8,14 @@ official inventory and sales statements.
 from __future__ import annotations
 
 import io
+import re
 from copy import copy
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, List, Optional
 import openpyxl
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.styles import Font, Alignment, Border, Side
 
 
 def _get_template_path() -> Path:
@@ -94,6 +95,31 @@ def export_exact_inward_receipt(
     if sheet_name and sheet_name != "Receipt":
         ws.title = sheet_name
 
+    # The inward report must contain receipt data only. The legacy template
+    # also included an N:T outward/balance block; remove it completely.
+    for merged in list(ws.merged_cells.ranges):
+        if merged.max_col > 13 or merged.min_row in (2, 3):
+            ws.unmerge_cells(str(merged))
+    ws.delete_cols(14, 7)
+    ws.merge_cells("B2:U2")
+    ws.merge_cells("B3:U3")
+    ws["B3"].value = "INWARD"
+
+    headers = [
+        "TYPES", "CHALLAN NUMBER", "GRN NUMBER", "DATE", "L.R. NO", "DATE",
+        "TRANSPORTER", "REC.DATE", "Total Pallet", "Pallets *Qty", "Total Boxes",
+        "Box * Qty", "QTY (in Nos)", "RATE", "BASIC VALUE", "RING WEIGHT",
+        "NET WEIGHT", "PACKING WEIGHT", "GROSS WEIGHT", "REMARK",
+    ]
+    header_style = copy(ws["B4"]._style)
+    for col_idx, header in enumerate(headers, start=2):
+        cell = ws.cell(row=4, column=col_idx, value=header)
+        cell._style = copy(header_style)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    widths = [18, 18, 18, 14, 14, 14, 20, 14, 12, 16, 12, 16, 14, 10, 16, 14, 14, 16, 14, 24]
+    for col_idx, width in enumerate(widths, start=2):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = width
+
     # Header Row 2
     today_str = datetime.now().strftime("%d-%m-%Y")
     vendor_label = f" - {vendor_name.upper()}" if vendor_name else ""
@@ -102,8 +128,8 @@ def export_exact_inward_receipt(
 
     # Cache row 5 styles
     template_styles = {}
-    for col_idx in range(2, 21):
-        c = ws.cell(row=5, column=col_idx)
+    for col_idx in range(2, 22):
+        c = ws.cell(row=5, column=min(col_idx, 13))
         template_styles[col_idx] = {
             "font": copy(c.font),
             "border": copy(c.border),
@@ -120,35 +146,64 @@ def export_exact_inward_receipt(
     # Clear original sample data rows
     ws.delete_rows(5, ws.max_row - 4)
 
+    def natural_key(value: Any) -> list[Any]:
+        return [int(part) if part.isdigit() else part.casefold() for part in re.split(r"(\d+)", str(value or ""))]
+
+    sorted_items = sorted(
+        items,
+        key=lambda item: (
+            natural_key(_get_val(item, "product_code", "sku", "product_name")),
+            natural_key(_get_val(item, "transaction_number")),
+        ),
+    )
+    longest_type = max(
+        (len(str(_get_val(item, "product_code", "sku", "product_name") or "")) for item in sorted_items),
+        default=len("TYPES"),
+    )
+    ws.column_dimensions["B"].width = min(max(longest_type + 3, 24), 60)
+
     curr_row = 5
-    for item in items:
+    for item in sorted_items:
         sku = str(_get_val(item, "product_code", "sku", "product_name") or "-")
-        dc_no = str(_get_val(item, "transaction_number", "reference_number", "dispatch_number") or "-")
+        challan_no = str(_get_val(item, "challan_number", "reference_number") or "-")
+        grn_no = str(_get_val(item, "transaction_number") or "-")
         rec_date = _safe_date(_get_val(item, "confirmed_at", "receipt_date", "movement_date"))
-        transporter = str(_get_val(item, "transporter_name") or "SP ROADLINES")
+        transporter = str(_get_val(item, "transporter_name") or "-")
         qty = _safe_float(_get_val(item, "quantity", "dispatched_qty", "qty"), 0.0)
-        rate = _safe_float(_get_val(item, "rate"), 10.03)
-        boxes = int(_safe_float(_get_val(item, "total_boxes"), 1.0))
-        lr_no = _get_val(item, "lr_number") or 12850
+        rate = _safe_float(_get_val(item, "rate"), 0.0)
+        pallets = int(_safe_float(_get_val(item, "total_pallets"), 0.0))
+        qty_per_pallet = _safe_float(_get_val(item, "qty_per_pallet"), 0.0)
+        boxes = int(_safe_float(_get_val(item, "total_boxes"), 0.0))
+        qty_per_box = _safe_float(_get_val(item, "qty_per_box"), 0.0)
+        lr_no = _get_val(item, "lr_number") or "-"
+        ring_weight = _safe_float(_get_val(item, "ring_weight"), 0.0)
+        net_weight = _safe_float(_get_val(item, "net_weight"), 0.0)
+        packing_weight = _safe_float(_get_val(item, "packing_weight"), 0.0)
+        gross_weight = _safe_float(_get_val(item, "gross_weight"), 0.0)
+        remark = str(_get_val(item, "remark") or "")
 
         ws.cell(row=curr_row, column=2, value=sku)                                     # B: TYPES
-        ws.cell(row=curr_row, column=3, value=dc_no)                                   # C: DC NO
-        ws.cell(row=curr_row, column=4, value=rec_date)                                # D: DATE
-        ws.cell(row=curr_row, column=5, value=lr_no)                                   # E: L.R. NO
-        ws.cell(row=curr_row, column=6, value=rec_date)                                # F: DATE
-        ws.cell(row=curr_row, column=7, value=transporter)                             # G: TRANSPORTER
-        ws.cell(row=curr_row, column=8, value=rec_date)                                # H: REC.DATE
-        ws.cell(row=curr_row, column=9, value=boxes)                                   # I: Total Boxes
-        ws.cell(row=curr_row, column=10, value=f"{boxes}*{int(qty)}")                  # J: Box * Qty
-        ws.cell(row=curr_row, column=11, value=qty)                                    # K: QTY (in Nos)
-        ws.cell(row=curr_row, column=12, value=rate)                                   # L: RATE
-        ws.cell(row=curr_row, column=13, value=f"=+K{curr_row}*L{curr_row}")           # M: BASIC VALUE
-        ws.cell(row=curr_row, column=18, value=0)                                      # R: QTY Lifted
-        ws.cell(row=curr_row, column=19, value="P")                                    # S: DATE / STATUS
-        ws.cell(row=curr_row, column=20, value=f"=+K{curr_row}-R{curr_row}")          # T: BAL.QTY
-
+        ws.cell(row=curr_row, column=3, value=challan_no)
+        ws.cell(row=curr_row, column=4, value=grn_no)
+        ws.cell(row=curr_row, column=5, value=rec_date)
+        ws.cell(row=curr_row, column=6, value=lr_no)
+        ws.cell(row=curr_row, column=7, value=rec_date)
+        ws.cell(row=curr_row, column=8, value=transporter)
+        ws.cell(row=curr_row, column=9, value=rec_date)
+        ws.cell(row=curr_row, column=10, value=pallets)
+        ws.cell(row=curr_row, column=11, value=f"{pallets}*{qty_per_pallet:g}" if pallets else "")
+        ws.cell(row=curr_row, column=12, value=boxes)
+        ws.cell(row=curr_row, column=13, value=f"{boxes}*{qty_per_box:g}" if boxes else "")
+        ws.cell(row=curr_row, column=14, value=qty)
+        ws.cell(row=curr_row, column=15, value=rate)
+        ws.cell(row=curr_row, column=16, value=f"=N{curr_row}*O{curr_row}")
+        ws.cell(row=curr_row, column=17, value=ring_weight)
+        ws.cell(row=curr_row, column=18, value=net_weight)
+        ws.cell(row=curr_row, column=19, value=packing_weight)
+        ws.cell(row=curr_row, column=20, value=gross_weight)
+        ws.cell(row=curr_row, column=21, value=remark)
         # Apply exact template styles
-        for col_idx in range(2, 21):
+        for col_idx in range(2, 22):
             cell = ws.cell(row=curr_row, column=col_idx)
             st = template_styles.get(col_idx)
             if st:
@@ -158,25 +213,37 @@ def export_exact_inward_receipt(
                 cell.number_format = copy(st["number_format"])
                 cell.alignment = copy(st["alignment"])
 
+        for col_idx in (3, 4, 6, 8, 11, 13, 21):
+            ws.cell(row=curr_row, column=col_idx).number_format = "@"
+        for col_idx in (5, 7, 9):
+            ws.cell(row=curr_row, column=col_idx).number_format = "DD-MMM-YY"
+        for col_idx in (10, 12):
+            ws.cell(row=curr_row, column=col_idx).number_format = "0"
+        ws.cell(row=curr_row, column=14).number_format = "0.000"
+        ws.cell(row=curr_row, column=15).number_format = "0.0000"
+        ws.cell(row=curr_row, column=16).number_format = "0.00"
+        for col_idx in (17, 18, 19, 20):
+            ws.cell(row=curr_row, column=col_idx).number_format = "0.000"
+        ws.cell(row=curr_row, column=2).alignment = Alignment(
+            horizontal="left", vertical="center", wrap_text=False, shrink_to_fit=False
+        )
+
         curr_row += 1
 
     last_data_row = max(curr_row - 1, 5)
 
     # Add Grand Total Row
     tot_row = curr_row + 1
-    ws.merge_cells(f"B{tot_row}:H{tot_row}")
+    ws.merge_cells(f"B{tot_row}:I{tot_row}")
     tot_cell = ws.cell(row=tot_row, column=2, value="Total")
     tot_cell.font = Font(name="Bookman Old Style", size=10, bold=True)
     tot_cell.alignment = Alignment(horizontal="center", vertical="center")
 
     thin_border = Border(top=Side(style="thin"), bottom=Side(style="double"))
-    ws.cell(row=tot_row, column=9, value=f"=SUM(I5:I{last_data_row})")
-    ws.cell(row=tot_row, column=11, value=f"=SUM(K5:K{last_data_row})")
-    ws.cell(row=tot_row, column=13, value=f"=SUM(M5:M{last_data_row})")
-    ws.cell(row=tot_row, column=18, value=f"=SUM(R5:R{last_data_row})")
-    ws.cell(row=tot_row, column=20, value=f"=SUM(T5:T{last_data_row})")
-
-    for col_idx in range(2, 21):
+    for col_idx in (10, 12, 14, 16, 18, 19, 20):
+        letter = openpyxl.utils.get_column_letter(col_idx)
+        ws.cell(row=tot_row, column=col_idx, value=f"=SUM({letter}5:{letter}{last_data_row})")
+    for col_idx in range(2, 22):
         cell = ws.cell(row=tot_row, column=col_idx)
         cell.font = Font(name="Bookman Old Style", size=10, bold=True)
         cell.border = thin_border

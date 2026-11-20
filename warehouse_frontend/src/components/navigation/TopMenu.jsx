@@ -26,6 +26,7 @@ import {
   RotateCcw,
   ClipboardList,
   FileText,
+  FileCheck2,
   ArrowDownLeft,
   ArrowUpRight,
   ChevronDown,
@@ -125,8 +126,12 @@ const menuItems = [
         label: 'BILLING & TAX', 
         items: [
           { icon: Receipt, label: 'Billing Documents', path: '/finance/billing' },
+          { icon: FileSpreadsheet, label: 'Customer Pricing Master', path: '/finance/customer-pricing' },
           { icon: FileSpreadsheet, label: 'Invoicing & GST', path: '/finance/invoicing' },
+          { icon: FileCheck2, label: 'E-Invoice & E-Way Bill', path: '/finance/einvoice' },
           { icon: FileText, label: 'GST Reports', path: '/finance/invoicing/gst-reports' },
+          { icon: Receipt, label: 'Credit & Debit Notes', path: '/finance/credit-debit' },
+          { icon: FileText, label: 'Sales Tax Invoice Tracking', path: '/finance/sales-tax-invoices' },
         ]
       },
     ]

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Trash2, Pencil, X } from 'lucide-react';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import PageHeader from '../../../components/common/PageHeader';
 import Button from '../../../components/ui/Button';
 import Card from '../../../components/ui/Card';
@@ -11,7 +11,12 @@ import InwardDocumentUpload from '../../logistics/components/InwardDocumentUploa
 import { useProducts, useUOMs } from '../../products/hooks/use-products';
 import { useVendors } from '../../vendors/hooks/use-vendors';
 import { useWarehouses } from '../../warehouses/hooks/use-warehouses';
-import { useCreateRingsInward, useRingsSupplierTypes } from '../hooks/use-rings';
+import {
+  useCreateRingsInward,
+  useRingsDocument,
+  useRingsSupplierTypes,
+  useUpdateRingsInward,
+} from '../hooks/use-rings';
 import {
   isBulkInwardLine,
   isPalletSupplier,
@@ -63,18 +68,18 @@ const resolveParsedRefNo = (line, challanNumber) => {
   return m ? m[1] : '';
 };
 
-const buildPackingDetail = (line, isPallet = false) => {
+const buildPackingDetail = (line) => {
   const ratio = String(line?.packing_ratio || '').trim();
   const boxes = Number(line?.box_count || 0);
   const perBox = Number(line?.qty_per_box || 0);
   const pallets = Number(line?.pallet_count || 0);
   const perPallet = Number(line?.qty_per_pallet || 0);
   const qty = packingQty(line) || Number(line?.quantity || 0);
-  if (pallets && perPallet) {
-    return `${perPallet}x${pallets} = ${qty}${ratio ? ` (${ratio})` : ''}`.slice(0, 100);
-  }
-  if (boxes && perBox) {
-    return `${perBox}x${boxes} = ${qty}${ratio ? ` (${ratio})` : ''}`.slice(0, 100);
+  const parts = [];
+  if (pallets && perPallet) parts.push(`${pallets}x${perPallet}`);
+  if (boxes && perBox) parts.push(`${boxes}x${perBox}`);
+  if (parts.length) {
+    return `${parts.join(' + ')} = ${qty}${ratio ? ` (${ratio})` : ''}`.slice(0, 100);
   }
   return ratio || undefined;
 };
@@ -136,6 +141,7 @@ const lineSelectClass =
 const numInputClass =
   'w-full min-w-0 bg-white border border-gray-200 rounded-md px-1.5 py-1.5 text-sm tabular-nums focus:ring-2 focus:ring-primary-500 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
 const challanColClass = 'w-[7.75rem] max-w-[7.75rem]';
+const ratioColClass = 'min-w-[5.5rem] w-[5.5rem]';
 const challanInputClass =
   'bg-white border border-gray-200 rounded-md px-1 py-1.5 font-mono text-[11px] leading-tight tracking-tight tabular-nums focus:ring-2 focus:ring-primary-500 outline-none w-full min-w-0';
 const lineProductSelectClass =
@@ -165,13 +171,13 @@ const parseShortQty = (value) => {
   return Number.isFinite(n) && n > 0 ? n : 0;
 };
 
-/** Net received = packed (or manual qty) minus short / damage. */
+/** Existing inward rule: short quantity is added to packed (or manual) quantity. */
 const lineNetQty = (line) => {
   const gross = packingQty(line);
   const short = parseShortQty(line?.short_quantity);
-  if (gross > 0) return Math.max(0, gross - short);
+  if (gross > 0) return gross + short;
   const manual = Number(line?.quantity) || 0;
-  return Math.max(0, manual - short);
+  return Math.max(0, manual + short);
 };
 
 const formatHsnDisplay = (code) => {
@@ -427,7 +433,12 @@ const mapParsedLinePacking = (line, usePallet) => {
 
 const RingsInwardCreatePage = () => {
   const navigate = useNavigate();
-  const { mutateAsync, isPending } = useCreateRingsInward();
+  const { id } = useParams();
+  const isEditing = !!id;
+  const createInward = useCreateRingsInward();
+  const updateInward = useUpdateRingsInward();
+  const { data: editDocument } = useRingsDocument(id);
+  const isPending = createInward.isPending || updateInward.isPending;
   const [parsedData, setParsedData] = useState(null);
   const lastParseKeyRef = useRef(null);
   const applyingParsedRef = useRef(false);
@@ -469,6 +480,48 @@ const RingsInwardCreatePage = () => {
     },
   });
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
+
+  useEffect(() => {
+    if (!isEditing || !editDocument) return;
+    const editLines = (editDocument.lines || []).map((line) => ({
+      ...emptyLine(),
+      product_id: String(line.product_id || ''),
+      heat_number: line.heat_number || '',
+      packing_ratio: line.packing_ratio || '',
+      has_remark: line.remarks ? 'yes' : 'no',
+      remarks: line.remarks || '',
+      pallet_count: Number(line.pallet_count || 0),
+      qty_per_pallet: Number(line.qty_per_pallet || 0),
+      box_count: Number(line.box_count || 0),
+      qty_per_box: Number(line.qty_per_box || 0),
+      quantity: Number(line.quantity || 0),
+      short_quantity: line.short_quantity ?? '',
+      unit_rate: Number(line.unit_rate || 0),
+      gst_percent: Number(line.gst_percent || 0),
+      per_ring_weight: line.per_ring_weight ?? '',
+      packing_weight: line.packing_weight ?? '',
+      challan_number: line.source_document_number || '',
+      reference_number: line.reference_number || '',
+      part_number: line.part_number || '',
+    }));
+    reset({
+      warehouse_id: String(editDocument.warehouse_id || ''),
+      vendor_id: String(editDocument.vendor_id || ''),
+      workflow: editDocument.workflow || '',
+      supplier_document_number: editDocument.supplier_document_number || '',
+      supplier_document_date: toDateInput(editDocument.supplier_document_date),
+      reference_date: toDateInput(editDocument.reference_date),
+      received_date: toDateInput(editDocument.received_date),
+      transporter_name: editDocument.transporter_name || '',
+      vehicle_number: editDocument.vehicle_number || '',
+      lr_number: editDocument.lr_number || '',
+      lr_date: toDateInput(editDocument.lr_date),
+      po_number: editDocument.po_number || '',
+      remarks: editDocument.remarks || '',
+      lines: editLines.length ? editLines : [emptyLine()],
+    });
+    replace(editLines.length ? editLines : [emptyLine()]);
+  }, [editDocument, isEditing, replace, reset]);
   const vendorId = watch('vendor_id');
   const watchedLines = useWatch({ control, name: 'lines' }) || [];
   const { data: supplierTypes, isFetched: typesFetched } = useRingsSupplierTypes(vendorId);
@@ -526,10 +579,29 @@ const RingsInwardCreatePage = () => {
   }, [vendorId, vendor, vendors, getValues, setValue]);
 
   const productOptions = useMemo(() => {
-    if (!vendorId) return [];
     const types = Array.isArray(supplierTypes) ? supplierTypes : [];
     const seen = new Set();
     const list = [];
+    if (isEditing && editDocument?.lines) {
+      editDocument.lines.forEach((line) => {
+        const id = String(line.product_id || '');
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          list.push({
+            id: line.product_id,
+            sku: line.product_sku,
+            name: line.product_name || line.product_sku || 'Saved product',
+            uom_id: line.uom_id,
+            net_weight: line.per_ring_weight,
+            unit_rate: line.unit_rate,
+            packing_ratio: line.packing_ratio,
+            part_number: line.part_number,
+            hsn_code: line.hsn_code,
+          });
+        }
+      });
+    }
+    if (!vendorId) return list;
     types.forEach((t) => {
       const id = String(t.product_id);
       if (id && !seen.has(id)) {
@@ -563,7 +635,20 @@ const RingsInwardCreatePage = () => {
     return list.sort((a, b) =>
       (a.sku || a.name || '').localeCompare(b.sku || b.name || '', undefined, { numeric: true, sensitivity: 'base' })
     );
-  }, [vendorId, supplierTypes, catalogData]);
+  }, [vendorId, supplierTypes, catalogData, isEditing, editDocument]);
+
+  useEffect(() => {
+    if (!isEditing || !editDocument?.lines?.length || !productOptions.length) return;
+    editDocument.lines.forEach((line, index) => {
+      const current = getValues(`lines.${index}.product_id`);
+      if (!current && line.product_id) {
+        setValue(`lines.${index}.product_id`, String(line.product_id), {
+          shouldDirty: false,
+          shouldValidate: false,
+        });
+      }
+    });
+  }, [editDocument, getValues, isEditing, productOptions, setValue]);
 
   useEffect(() => {
     const ringsWh = warehouses.find((w) => w.code === 'RING-GDN') || warehouses[0];
@@ -571,6 +656,7 @@ const RingsInwardCreatePage = () => {
   }, [warehouses, setValue, getValues]);
 
   useEffect(() => {
+    if (isEditing) return;
     if (!vendorId) {
       (getValues('lines') || []).forEach((_, index) => {
         setValue(`lines.${index}.product_id`, '');
@@ -588,7 +674,7 @@ const RingsInwardCreatePage = () => {
         setValue(`lines.${index}.per_ring_weight`, '');
       }
     });
-  }, [vendorId, typesFetched, productOptions, getValues, setValue]);
+  }, [vendorId, typesFetched, productOptions, getValues, setValue, isEditing]);
 
   useEffect(() => {
     if (!parsedData) return;
@@ -728,31 +814,18 @@ const RingsInwardCreatePage = () => {
       if (packed > 0) {
         const short =
           shortOverride !== undefined ? parseShortQty(shortOverride) : parseShortQty(line.short_quantity);
-        setValue(`lines.${index}.quantity`, Math.max(0, packed - short), { shouldDirty: true });
+        setValue(`lines.${index}.quantity`, packed + short, { shouldDirty: true });
       }
     });
   };
 
   const onPalletChange = (index) => {
     if (applyingParsedRef.current) return;
-    const pCount = Number(getValues(`lines.${index}.pallet_count`) || 0);
-    const pQty = Number(getValues(`lines.${index}.qty_per_pallet`) || 0);
-    if (pCount > 0 || pQty > 0) {
-      setValue(`lines.${index}.box_count`, 0, { shouldDirty: true });
-      setValue(`lines.${index}.qty_per_box`, 0, { shouldDirty: true });
-    }
     recalcLineQty(index);
   };
 
   const onBoxChange = (index) => {
     if (applyingParsedRef.current) return;
-    if (isPalletMode) return;
-    const bCount = Number(getValues(`lines.${index}.box_count`) || 0);
-    const bQty = Number(getValues(`lines.${index}.qty_per_box`) || 0);
-    if (bCount > 0 || bQty > 0) {
-      setValue(`lines.${index}.pallet_count`, 0, { shouldDirty: true });
-      setValue(`lines.${index}.qty_per_pallet`, 0, { shouldDirty: true });
-    }
     recalcLineQty(index);
   };
 
@@ -840,7 +913,13 @@ const RingsInwardCreatePage = () => {
   const onSubmit = async (form) => {
     try {
       const workflow = form.workflow || (workflowMaster === 'BOTH' ? '' : workflowMaster);
-      const filled = form.lines.filter((line) => {
+      const submittedLines = form.lines.map((line, index) => ({
+        ...line,
+        product_id:
+          line.product_id ||
+          (isEditing ? String(editDocument?.lines?.[index]?.product_id || '') : ''),
+      }));
+      const filled = submittedLines.filter((line) => {
         const qty = packingQty(line) || Number(line.quantity || 0);
         return line.product_id && qty > 0;
       });
@@ -856,7 +935,7 @@ const RingsInwardCreatePage = () => {
         window.alert('Enter a reference / challan number on the header or on at least one line.');
         return;
       }
-      const doc = await mutateAsync({
+      const payload = {
         warehouse_id: form.warehouse_id,
         vendor_id: form.vendor_id,
         workflow: workflow || undefined,
@@ -877,15 +956,14 @@ const RingsInwardCreatePage = () => {
             (t) => String(t.product_id) === String(line.product_id)
           );
           const quantity = lineNetQty(line);
-          const isPallet = isPalletMode || (Number(line.pallet_count || 0) > 0 && Number(line.box_count || 0) === 0);
           return {
             product_id: line.product_id,
             uom_id: product?.uom_id || catalog?.uom_id,
             heat_number: String(line.heat_number || '').trim() || undefined,
-            pallet_count: isPallet ? Number(line.pallet_count || 0) : 0,
-            qty_per_pallet: isPallet ? Number(line.qty_per_pallet || 0) : 0,
-            box_count: !isPallet ? Number(line.box_count || 0) : 0,
-            qty_per_box: !isPallet ? Number(line.qty_per_box || 0) : 0,
+            pallet_count: Number(line.pallet_count || 0),
+            qty_per_pallet: Number(line.qty_per_pallet || 0),
+            box_count: Number(line.box_count || 0),
+            qty_per_box: Number(line.qty_per_box || 0),
             quantity,
             short_quantity:
               line.short_quantity === '' || line.short_quantity == null
@@ -899,16 +977,23 @@ const RingsInwardCreatePage = () => {
             reference_number: String(line.reference_number || '').trim() || undefined,
             part_number: String(line.part_number || '').trim() || undefined,
             transporter_name: form.transporter_name || undefined,
-            packing_detail: buildPackingDetail(line, isPallet),
+            packing_detail: buildPackingDetail(line),
             remarks: line.has_remark === 'yes' && String(line.remarks || '').trim()
               ? String(line.remarks).trim()
               : undefined,
           };
         }),
-      });
+      };
+      const doc = isEditing
+        ? await updateInward.mutateAsync({ id, data: payload })
+        : await createInward.mutateAsync(payload);
       navigate(doc?.id ? `/rings/inward/${doc.id}` : '/rings/inward');
     } catch (err) {
-      window.alert(err.response?.data?.message || err.message || 'Failed to post inward');
+      window.alert(
+        err.response?.data?.message ||
+          err.message ||
+          `Failed to ${isEditing ? 'update' : 'post'} inward`
+      );
     }
   };
 
@@ -935,12 +1020,16 @@ const RingsInwardCreatePage = () => {
       render={({ trigger, feedback }) => (
     <div className="space-y-6">
       <PageHeader
-        title="New Inward Transaction"
-        description="Record a new receipt of materials into the warehouse."
+        title={isEditing ? 'Edit Inward Transaction' : 'New Inward Transaction'}
+        description={
+          isEditing
+            ? 'Update the receipt and safely recalculate its inventory movement.'
+            : 'Record a new receipt of materials into the warehouse.'
+        }
         breadcrumbs={[
           { label: 'Dashboard', to: '/dashboard' },
           { label: 'Inward', to: '/rings/inward' },
-          { label: 'New Inward' },
+          { label: isEditing ? 'Edit Inward' : 'New Inward' },
         ]}
         actions={trigger}
       />
@@ -1042,6 +1131,7 @@ const RingsInwardCreatePage = () => {
                     <col className="w-[5.5rem]" />
                     <col className="w-[7.75rem]" />
                     <col className="w-[4.5rem]" />
+                    <col className="w-[5.5rem]" />
                   </colgroup>
                   <thead>
                     <tr>
@@ -1049,7 +1139,7 @@ const RingsInwardCreatePage = () => {
                       <th className={`${thBase} w-[5.5rem]`}>HSN</th>
                       <th className={`${thBase} ${challanColClass}`}>Challan No</th>
                       <th className={`${thBase} w-[4.5rem]`}>Ref No</th>
-                      <th className={thBase}>Ratio</th>
+                      <th className={`${thBase} ${ratioColClass}`}>Ratio</th>
                       <th className={`${thBase} ${isPalletMode ? 'bg-blue-50 text-blue-700 font-bold border-t border-l border-blue-200' : 'text-gray-400'}`}>Pallets</th>
                       <th className={`${thBase} ${isPalletMode ? 'bg-blue-50 text-blue-700 font-bold border-t border-r border-blue-200' : 'text-gray-400'}`}>Qty / Pallet</th>
                       <th className={`${thBase} ${!isPalletMode ? 'bg-amber-50 text-amber-700 font-bold border-t border-l border-amber-200' : 'text-gray-400'}`}>Boxes</th>
@@ -1078,8 +1168,14 @@ const RingsInwardCreatePage = () => {
                   </thead>
                   <tbody>
                     {fields.map((field, index) => {
+                      const selectedProductId =
+                        watchedLines[index]?.product_id ||
+                        field.product_id ||
+                        (isEditing
+                          ? String(editDocument?.lines?.[index]?.product_id || '')
+                          : '');
                       const product = productOptions.find(
-                        (p) => String(p.id) === String(watchedLines[index]?.product_id)
+                        (p) => String(p.id) === String(selectedProductId)
                       );
                       const uom = (uomsData || []).find((u) => String(u.id) === String(product?.uom_id));
                       const lineHasRemark = watchedLines[index]?.has_remark === 'yes';
@@ -1092,7 +1188,7 @@ const RingsInwardCreatePage = () => {
                               {...register(`lines.${index}.product_id`, { required: true })}
                             />
                             <SearchableSelect
-                              value={watchedLines[index]?.product_id || ''}
+                              value={selectedProductId}
                               options={productOptions}
                               getOptionLabel={productLabel}
                               getOptionValue={(p) => p.id}
@@ -1135,7 +1231,7 @@ const RingsInwardCreatePage = () => {
                               {...register(`lines.${index}.reference_number`)}
                             />
                           </td>
-                          <td className={tdBase}>
+                          <td className={`${tdBase} ${ratioColClass}`}>
                             <input
                               type="text"
                               autoComplete="off"
@@ -1372,7 +1468,7 @@ const RingsInwardCreatePage = () => {
               Cancel
             </Button>
             <Button type="submit" size="sm" isLoading={isPending}>
-              Post Inward
+              {isEditing ? 'Update Inward' : 'Post Inward'}
             </Button>
           </Card.Footer>
         </Card>
