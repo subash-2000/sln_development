@@ -365,77 +365,38 @@ export default function CreditDebitPage() {
           </Card>
         </div>
       )}
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-600">
-              <tr>
-                {[
-                  'Date',
-                  'Supplier',
-                  'Type',
-                  'Note No.',
-                  'Invoice',
-                  'Amount',
-                  'Reason',
-                  'Status',
-                  'Actions',
-                ].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan="9" className="p-8 text-center">
-                    Loading…
-                  </td>
-                </tr>
-              ) : (
-                (data?.items || []).map((row) => (
-                  <tr key={row.id} className="border-t">
-                    <td className="px-4 py-3">{row.note_date}</td>
-                    <td className="px-4 py-3">{row.vendor_name || '—'}</td>
-                    <td className="px-4 py-3 font-medium">{row.note_type}</td>
-                    <td className="px-4 py-3">{row.note_number}</td>
-                    <td className="px-4 py-3">{row.invoice_number || '—'}</td>
-                    <td className="px-4 py-3 font-semibold">{money(row.amount)}</td>
-                    <td className="px-4 py-3">{row.reason}</td>
-                    <td className="px-4 py-3">{row.status}</td>
-                    <td className="px-4 py-3 whitespace-nowrap space-x-2">
-                      {row.status === 'DRAFT' && (
-                        <>
-                          <button className="text-blue-600" onClick={() => edit(row)}>
-                            Edit
-                          </button>
-                          <button className="text-emerald-600" onClick={() => confirm(row)}>
-                            Confirm
-                          </button>
-                        </>
-                      )}{' '}
-                      {row.status !== 'CANCELLED' && (
-                        <button className="text-red-600" onClick={() => cancel(row)}>
-                          Cancel
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-              {!isLoading && !(data?.items || []).length && (
-                <tr>
-                  <td colSpan="9" className="p-8 text-center text-gray-500">
-                    No Credit/Debit Notes found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <DataTable
+        columns={columns}
+        data={data?.items || []}
+        isLoading={isLoading}
+        emptyTitle="No credit or debit notes found"
+        hasFilters={Boolean(vendorId || type || status || search)}
+        actions={(row) => (
+          <RowActions
+            actions={[
+              {
+                type: 'edit',
+                label: 'Edit Draft Note',
+                onClick: () => edit(row),
+                hidden: row.status !== 'DRAFT',
+              },
+              {
+                type: 'approve',
+                label: 'Confirm Note',
+                onClick: () => confirm(row),
+                hidden: row.status !== 'DRAFT',
+              },
+              {
+                type: 'reject',
+                label: 'Cancel Note',
+                onClick: () => cancel(row),
+                variant: 'danger',
+                hidden: row.status === 'CANCELLED',
+              },
+            ]}
+          />
+        )}
+      />
     </div>
   );
 }

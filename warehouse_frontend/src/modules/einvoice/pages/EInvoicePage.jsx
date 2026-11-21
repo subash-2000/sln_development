@@ -50,7 +50,7 @@ const Select = ({ label, value, onChange, children }) => (
   <label className="space-y-1.5 text-sm font-medium text-gray-700">
     <span>{label}</span>
     <select
-      className="w-full rounded-lg border border-gray-300 px-3 py-2.5 bg-white"
+      className="w-full rounded-lg border border-gray-200 px-4 py-2 bg-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
       value={value}
       onChange={(e) => onChange(e.target.value)}
     >
@@ -194,33 +194,36 @@ export default function EInvoicePage() {
           <Card.Header>
             <Card.Title>Statutory Documents</Card.Title>
           </Card.Header>
-          <Card.Body className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-gray-500">
-                  <th className="py-3">Document</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  <th>IRN</th>
-                  <th>E-Way Bill</th>
-                  <th>Actions</th>
+          <Card.Body className="p-0 overflow-x-auto">
+            <table className="min-w-full text-sm text-left text-gray-700">
+              <thead className="bg-gray-50 text-gray-600 uppercase text-xs font-semibold border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-3">Document</th>
+                  <th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">IRN</th>
+                  <th className="px-4 py-3">E-Way Bill</th>
+                  <th className="px-4 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {(documents.data?.items || []).map((doc) => (
-                  <tr key={doc.id} className="border-b last:border-0">
-                    <td className="py-3 font-medium">{doc.document_number}</td>
-                    <td>{doc.document_type}</td>
-                    <td>
+                  <tr
+                    key={doc.id}
+                    className="border-b border-gray-100 last:border-0 hover:bg-blue-50/30"
+                  >
+                    <td className="px-4 py-3 font-medium">{doc.document_number}</td>
+                    <td className="px-4 py-3">{doc.document_type}</td>
+                    <td className="px-4 py-3">
                       <span className={`rounded-full px-2 py-1 text-xs ${statusClass(doc.status)}`}>
                         {doc.status}
                       </span>
                     </td>
-                    <td className="max-w-48 truncate" title={doc.irn}>
+                    <td className="px-4 py-3 max-w-48 truncate" title={doc.irn}>
                       {doc.irn || '—'}
                     </td>
-                    <td>{doc.ewaybill_number || '—'}</td>
-                    <td>
+                    <td className="px-4 py-3">{doc.ewaybill_number || '—'}</td>
+                    <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
                         {doc.status === 'DRAFT' && (
                           <Button
@@ -496,29 +499,32 @@ export default function EInvoicePage() {
           <Card.Header>
             <Card.Title>API Audit Log</Card.Title>
           </Card.Header>
-          <Card.Body className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-gray-500">
-                  <th className="py-3">Time</th>
-                  <th>Operation</th>
-                  <th>HTTP</th>
-                  <th>Result</th>
-                  <th>Duration</th>
-                  <th>Error</th>
+          <Card.Body className="p-0 overflow-x-auto">
+            <table className="min-w-full text-sm text-left text-gray-700">
+              <thead className="bg-gray-50 text-gray-600 uppercase text-xs font-semibold border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-3">Time</th>
+                  <th className="px-4 py-3">Operation</th>
+                  <th className="px-4 py-3">HTTP</th>
+                  <th className="px-4 py-3">Result</th>
+                  <th className="px-4 py-3">Duration</th>
+                  <th className="px-4 py-3">Error</th>
                 </tr>
               </thead>
               <tbody>
                 {(logs.data?.items || []).map((log) => (
-                  <tr key={log.id} className="border-b last:border-0">
-                    <td className="py-3">{new Date(log.created_at).toLocaleString()}</td>
-                    <td>{log.operation}</td>
-                    <td>{log.http_status || '—'}</td>
-                    <td className={log.success ? 'text-green-700' : 'text-red-700'}>
+                  <tr
+                    key={log.id}
+                    className="border-b border-gray-100 last:border-0 hover:bg-blue-50/30"
+                  >
+                    <td className="px-4 py-3">{new Date(log.created_at).toLocaleString()}</td>
+                    <td className="px-4 py-3">{log.operation}</td>
+                    <td className="px-4 py-3">{log.http_status || '—'}</td>
+                    <td className={`px-4 py-3 ${log.success ? 'text-green-700' : 'text-red-700'}`}>
                       {log.success ? 'Success' : 'Failed'}
                     </td>
-                    <td>{log.duration_ms ? `${log.duration_ms} ms` : '—'}</td>
-                    <td className="max-w-xs truncate" title={log.error_message}>
+                    <td className="px-4 py-3">{log.duration_ms ? `${log.duration_ms} ms` : '—'}</td>
+                    <td className="px-4 py-3 max-w-xs truncate" title={log.error_message}>
                       {log.error_message || '—'}
                     </td>
                   </tr>

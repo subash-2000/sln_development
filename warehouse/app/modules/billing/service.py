@@ -86,7 +86,7 @@ class BillingService:
                 "status": created_period.status,
             },
         )
-
+        await self.db.commit()
         return BillingPeriodResponse.model_validate(created_period)
 
     async def get_billing_period(
@@ -344,7 +344,7 @@ class BillingService:
                 "status": created_doc.status,
             },
         )
-
+        await self.db.commit()
         return self._build_document_response(created_doc)
 
     async def confirm_billing_document(
@@ -375,7 +375,7 @@ class BillingService:
                 "status": confirmed_doc.status,
             },
         )
-
+        await self.db.commit()
         return self._build_document_response(confirmed_doc)
 
     async def get_billing_document(
