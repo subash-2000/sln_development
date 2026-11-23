@@ -420,9 +420,24 @@ class ReportingRepository:
                 StockMove.quantity,
                 StockTransaction.status,
                 func.coalesce(
+                    RingsDocumentLine.source_document_number,
                     RingsDocument.supplier_document_number,
                     StockTransaction.reference_document_number,
                 ).label("challan_number"),
+                func.coalesce(
+                    RingsDocumentLine.source_document_date,
+                    RingsDocument.supplier_document_date,
+                ).label("challan_date"),
+                RingsDocumentLine.reference_number.label("reference_number"),
+                func.coalesce(
+                    RingsDocumentLine.reference_date,
+                    RingsDocument.reference_date,
+                ).label("reference_date"),
+                func.coalesce(
+                    RingsDocumentLine.received_date,
+                    RingsDocument.received_date,
+                    func.cast(StockTransaction.confirmed_at, Date),
+                ).label("received_date"),
                 func.coalesce(RingsDocumentLine.pallet_count, 0).label("total_pallets"),
                 func.coalesce(RingsDocumentLine.qty_per_pallet, 0).label("qty_per_pallet"),
                 func.coalesce(RingsDocumentLine.box_count, 0).label("total_boxes"),
@@ -440,6 +455,12 @@ class ReportingRepository:
                     RingsDocument.transporter_name,
                 ).label("transporter_name"),
                 func.coalesce(RingsDocumentLine.lr_number, RingsDocument.lr_number).label("lr_number"),
+                func.coalesce(RingsDocumentLine.lr_date, RingsDocument.lr_date).label("lr_date"),
+                func.coalesce(
+                    RingsDocumentLine.vehicle_number,
+                    RingsDocument.vehicle_number,
+                ).label("vehicle_number"),
+                RingsDocument.po_number.label("po_number"),
                 func.coalesce(RingsDocumentLine.unit_rate, StockMove.unit_cost, 0).label("rate"),
             )
             .join(StockMove, StockTransaction.id == StockMove.transaction_id)

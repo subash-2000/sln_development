@@ -729,12 +729,18 @@ const RingsInwardCreatePage = () => {
               line.source_document_number ||
               parsedData.reference_document_number ||
               '',
+            challan_date: line.challan_date || parsedData.transaction_date || '',
             reference_number: resolveParsedRefNo(
               line,
               line.challan_number ||
                 line.source_document_number ||
                 parsedData.reference_document_number
             ),
+            reference_date: line.reference_date || parsedData.reference_date || '',
+            lr_number: line.lr_number || parsedData.lr_number || '',
+            lr_date: line.lr_date || parsedData.lr_date || '',
+            vehicle_number: line.vehicle_number || parsedData.vehicle_number || '',
+            transporter_name: line.transporter_name || parsedData.transporter_name || '',
             part_number:
               String(line.part_number || '').trim() ||
               String(product?.part_number || '').trim() ||
@@ -973,10 +979,15 @@ const RingsInwardCreatePage = () => {
             per_ring_weight: line.per_ring_weight === '' ? undefined : Number(line.per_ring_weight),
             packing_weight: Number(line.packing_weight || 0),
             source_document_number: String(line.challan_number || '').trim() || undefined,
-            source_document_date: form.supplier_document_date || undefined,
+            source_document_date: line.challan_date || form.supplier_document_date || undefined,
             reference_number: String(line.reference_number || '').trim() || undefined,
+            reference_date: line.reference_date || form.reference_date || undefined,
             part_number: String(line.part_number || '').trim() || undefined,
-            transporter_name: form.transporter_name || undefined,
+            lr_number: line.lr_number || form.lr_number || undefined,
+            lr_date: line.lr_date || form.lr_date || undefined,
+            vehicle_number: line.vehicle_number || form.vehicle_number || undefined,
+            transporter_name: line.transporter_name || form.transporter_name || undefined,
+            received_date: form.received_date || undefined,
             packing_detail: buildPackingDetail(line),
             remarks: line.has_remark === 'yes' && String(line.remarks || '').trim()
               ? String(line.remarks).trim()

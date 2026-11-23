@@ -59,6 +59,9 @@ export const logisticsApi = {
           // Scanned PDFs require OCR and commonly take 1-2 minutes.  The
           // default API timeout is 30 seconds, which aborted valid parses.
           timeout: 300000,
+          // Override the API client's application/json default. Axios adds
+          // the required multipart boundary for the FormData payload.
+          headers: { 'Content-Type': 'multipart/form-data' },
         })
       );
     },

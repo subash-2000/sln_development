@@ -90,8 +90,11 @@ class InwardDocumentParseResult:
     warnings: list[str] = field(default_factory=list)
 
 
-def _ocr_page(page) -> str:
-    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+def _run_ocr(page, scale: float) -> str:
+    # 1.5x is sufficient for normal 150-300 DPI supplier scans and contains
+    # only 56% of the pixels of the previous 2x render.  This matters on the
+    # small testing EC2 instance where inference otherwise takes 80+ seconds.
+    pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
     img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
     if pix.n == 4:
         img = img[:, :, :3]
@@ -99,6 +102,15 @@ def _ocr_page(page) -> str:
     if not result:
         return ""
     return "\n".join(line[1] for line in result)
+
+
+def _ocr_page(page) -> str:
+    text = _run_ocr(page, 1.5).strip()
+    # Retry genuinely unreadable scans at the old resolution.  Normal
+    # challans produce many lines, so they stay on the fast path.
+    if len(text) >= 80 and text.count("\n") >= 3:
+        return text
+    return _run_ocr(page, 2.0)
 
 
 def _extract_pdf_pages(data: bytes) -> list[str]:

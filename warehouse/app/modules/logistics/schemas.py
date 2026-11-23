@@ -199,11 +199,13 @@ class InwardParseLineItem(BaseModel):
     qty_per_pallet: float | None = None
     packing_weight: float | None = None
     challan_number: str | None = None
+    challan_date: date | None = None
     reference_number: str | None = None
     reference_date: date | None = None
     lr_number: str | None = None
     lr_date: date | None = None
     vehicle_number: str | None = None
+    transporter_name: str | None = None
     matched: bool = False
 
 

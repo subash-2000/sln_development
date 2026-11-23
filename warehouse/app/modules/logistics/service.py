@@ -831,11 +831,13 @@ class LogisticsService:
                         qty_per_pallet=0.0,
                         packing_weight=float(item.packing_weight or 0) if item.packing_weight else None,
                         challan_number=item.challan_number,
+                        challan_date=item.challan_date,
                         reference_number=item.reference_number,
                         reference_date=item.reference_date,
                         lr_number=item.lr_number,
                         lr_date=item.lr_date,
                         vehicle_number=item.vehicle_number,
+                        transporter_name=item.transporter_name,
                         matched=product is not None,
                     )
                 )
@@ -877,11 +879,13 @@ class LogisticsService:
                     qty_per_pallet=final_qty_per_pallet,
                     packing_weight=float(item.packing_weight or 0) if item.packing_weight else None,
                     challan_number=item.challan_number,
+                    challan_date=item.challan_date,
                     reference_number=item.reference_number,
                     reference_date=item.reference_date,
                     lr_number=item.lr_number,
                     lr_date=item.lr_date,
                     vehicle_number=item.vehicle_number,
+                    transporter_name=item.transporter_name,
                     matched=product is not None,
                 )
             )

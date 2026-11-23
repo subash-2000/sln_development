@@ -205,6 +205,10 @@ class InwardSummaryRow(BaseModel):
     status: str
 
     challan_number: str | None = None
+    challan_date: date | None = None
+    reference_number: str | None = None
+    reference_date: date | None = None
+    received_date: date | None = None
     total_pallets: int = 0
     qty_per_pallet: Decimal = Decimal("0")
     total_boxes: int = 0
@@ -216,6 +220,9 @@ class InwardSummaryRow(BaseModel):
     remark: str | None = None
     transporter_name: str | None = None
     lr_number: str | None = None
+    lr_date: date | None = None
+    vehicle_number: str | None = None
+    po_number: str | None = None
     rate: Decimal = Decimal("0")
 
 

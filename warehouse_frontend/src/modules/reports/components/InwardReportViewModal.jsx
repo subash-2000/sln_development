@@ -82,6 +82,28 @@ const InwardReportViewModal = ({ open, onClose, data }) => {
                   {data.confirmed_at || 'N/A'}
                 </p>
               </div>
+              <div>
+                <p className="text-xs text-gray-500">Challan Date</p>
+                <p className="text-sm font-semibold text-gray-900 mt-0.5">{data.challan_date || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Reference Number / Date</p>
+                <p className="text-sm font-semibold text-gray-900 mt-0.5">
+                  {data.reference_number || 'N/A'}{data.reference_date ? ` / ${data.reference_date}` : ''}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">LR / GR Number / Date</p>
+                <p className="text-sm font-semibold text-gray-900 mt-0.5">
+                  {data.lr_number || 'N/A'}{data.lr_date ? ` / ${data.lr_date}` : ''}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Transporter / Vehicle</p>
+                <p className="text-sm font-semibold text-gray-900 mt-0.5">
+                  {data.transporter_name || 'N/A'}{data.vehicle_number ? ` / ${data.vehicle_number}` : ''}
+                </p>
+              </div>
             </div>
           </div>
 

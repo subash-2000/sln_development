@@ -149,7 +149,7 @@ const InwardDocumentUpload = ({ onParsed, render, multiple = false, getFormPalle
           </Button>
         )}
       </div>
-      {isParsing && progress && <p className="text-xs text-blue-700 mt-1">{progress} — OCR may take up to 2 minutes per PDF.</p>}
+      {isParsing && progress && <p className="text-xs text-blue-700 mt-1">{progress} — reading scanned text, usually under one minute.</p>}
     </>
   );
 

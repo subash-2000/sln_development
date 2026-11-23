@@ -166,6 +166,9 @@ export const exportInwardReportToExcel = async (items = [], filters = {}) => {
       const challanNo = item.challan_number || item.reference_number || '-';
       const grnNo = item.inward_number || item.transaction_number || '-';
       const recDate = formatDate(item.confirmed_at || item.receipt_date || item.movement_date);
+      const challanDate = formatDate(item.challan_date || item.reference_date || item.confirmed_at);
+      const lrDate = formatDate(item.lr_date);
+      const receivedDate = formatDate(item.received_date || item.confirmed_at);
       const transporter = item.transporter_name || '-';
       const qty = Number(item.quantity) || Number(item.dispatched_qty) || 0;
       const rate = Number(item.rate) || 0;
@@ -178,11 +181,11 @@ export const exportInwardReportToExcel = async (items = [], filters = {}) => {
       row.getCell(2).value = sku;
       row.getCell(3).value = challanNo;
       row.getCell(4).value = grnNo;
-      row.getCell(5).value = recDate;
+      row.getCell(5).value = challanDate;
       row.getCell(6).value = lrNo;
-      row.getCell(7).value = recDate;
+      row.getCell(7).value = lrDate;
       row.getCell(8).value = transporter;
-      row.getCell(9).value = recDate;
+      row.getCell(9).value = receivedDate;
       row.getCell(10).value = pallets;
       row.getCell(11).value = pallets ? `${pallets}*${qtyPerPallet}` : '';
       row.getCell(12).value = boxes;

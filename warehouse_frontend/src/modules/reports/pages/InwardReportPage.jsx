@@ -108,6 +108,8 @@ const InwardReportPage = () => {
     const headers = [
       'Inward Number',
       'Stock GRN',
+      'Supplier DC / Challan',
+      'Challan Date',
       'Receipt Date',
       'Supplier / Vendor',
       'Product Code',
@@ -120,6 +122,8 @@ const InwardReportPage = () => {
     const rows = filteredItems.map((item) => [
       item.inward_number || item.transaction_number || '',
       item.transaction_number || '',
+      item.challan_number || '',
+      item.challan_date || '',
       item.confirmed_at || '',
       item.vendor_name || '',
       item.product_code || '',
@@ -332,6 +336,11 @@ const InwardReportPage = () => {
                       {item.inward_number && item.transaction_number && (
                         <div className="text-[10px] font-normal text-gray-400 mt-0.5">
                           GRN: {item.transaction_number}
+                        </div>
+                      )}
+                      {item.challan_number && (
+                        <div className="text-[10px] font-normal text-blue-500 mt-0.5">
+                          DC: {item.challan_number}
                         </div>
                       )}
                     </td>
