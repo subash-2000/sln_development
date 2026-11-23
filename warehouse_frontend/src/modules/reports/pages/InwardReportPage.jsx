@@ -79,7 +79,9 @@ const InwardReportPage = () => {
   }, [items, selectedVendor, searchTerm]);
 
   // KPIs
-  const totalReceipts = filteredItems.length;
+  const totalReceipts = new Set(
+    filteredItems.map((i) => i.inward_number || i.transaction_number).filter(Boolean)
+  ).size;
   const totalReceivedQty = filteredItems.reduce(
     (sum, i) => sum + (Number(i.quantity) || 0),
     0
@@ -104,7 +106,8 @@ const InwardReportPage = () => {
 
   const handleExportCsv = () => {
     const headers = [
-      'Transaction Number (GRN)',
+      'Inward Number',
+      'Stock GRN',
       'Receipt Date',
       'Supplier / Vendor',
       'Product Code',
@@ -115,6 +118,7 @@ const InwardReportPage = () => {
     ];
 
     const rows = filteredItems.map((item) => [
+      item.inward_number || item.transaction_number || '',
       item.transaction_number || '',
       item.confirmed_at || '',
       item.vendor_name || '',
@@ -324,7 +328,12 @@ const InwardReportPage = () => {
                     className="hover:bg-emerald-50/40 cursor-pointer transition-colors"
                   >
                     <td className="py-3.5 px-4 font-mono font-bold text-gray-900">
-                      {item.transaction_number}
+                      <div>{item.inward_number || item.transaction_number}</div>
+                      {item.inward_number && item.transaction_number && (
+                        <div className="text-[10px] font-normal text-gray-400 mt-0.5">
+                          GRN: {item.transaction_number}
+                        </div>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-gray-600 font-mono text-xs">
                       {item.confirmed_at || '-'}

@@ -93,6 +93,10 @@ class CurrentStockRow(BaseModel):
 
     quantity_available: Decimal
 
+    received_qty: Decimal = Decimal("0")
+
+    dispatched_qty: Decimal = Decimal("0")
+
 
 
 class VendorStockRow(BaseModel):
@@ -184,6 +188,7 @@ class SalesReportRow(BaseModel):
 class InwardSummaryRow(BaseModel):
 
     transaction_number: str
+    inward_number: str | None = None
 
     confirmed_at: date | None
 
@@ -246,6 +251,11 @@ class OutwardSummaryRow(BaseModel):
     lr_number: str | None = None
 
     eway_bill_number: str | None = None
+
+    sln_challan_number: str | None = None
+    supplier_invoice_number: str | None = None
+    po_number: str | None = None
+    rate: Decimal = Decimal("0")
 
 
 

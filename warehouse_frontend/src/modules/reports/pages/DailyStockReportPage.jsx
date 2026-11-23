@@ -16,7 +16,7 @@ import PageHeader from '../../../components/common/PageHeader';
 import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
 import Loader from '../../../components/common/Loader';
-import { useDailyStockReports } from '../hooks/use-reports';
+import { useDailyStockReports, useOutwardReports } from '../hooks/use-reports';
 import { exportReportToCsv } from '../api/reports.api';
 import { exportDailyStockReportToExcel } from '../utils/excel-export';
 import DailyStockReportViewModal from '../components/DailyStockReportViewModal';
@@ -37,6 +37,13 @@ const DailyStockReportPage = () => {
 
   const { data: reportsData, isLoading } = useDailyStockReports(queryParams);
   const items = reportsData?.items || [];
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: outwardData, isLoading: isOutwardLoading } = useOutwardReports({
+    page_size: 200,
+    date_from: today,
+    date_to: today,
+  });
+  const outwardItems = outwardData?.items || [];
 
   const warehouseOptions = useMemo(() => {
     return Array.from(new Set(items.map((i) => i.warehouse_name).filter(Boolean))).sort();
@@ -96,6 +103,8 @@ const DailyStockReportPage = () => {
       'Location / Bin',
       'Batch / Lot',
       'Quantity On Hand',
+      'Received Qty',
+      'Outward / Dispatched Qty',
       'Quantity Reserved',
       'Quantity Available',
       'UOM',
@@ -109,6 +118,8 @@ const DailyStockReportPage = () => {
       item.location_code || '',
       item.batch_number || '',
       item.quantity_on_hand || '',
+      item.received_qty || '',
+      item.dispatched_qty || '',
       item.quantity_reserved || '',
       item.quantity_available || '',
       item.uom_code || 'PCS',
@@ -337,6 +348,8 @@ const DailyStockReportPage = () => {
                   <th className="py-3 px-4">Warehouse & Bin</th>
                   <th className="py-3 px-4">Batch / Lot</th>
                   <th className="py-3 px-4 text-right">On Hand</th>
+                  <th className="py-3 px-4 text-right">Received</th>
+                  <th className="py-3 px-4 text-right">Outward</th>
                   <th className="py-3 px-4 text-right">Reserved</th>
                   <th className="py-3 px-4 text-right">Available</th>
                   <th className="py-3 px-4 text-right">Action</th>
@@ -370,6 +383,12 @@ const DailyStockReportPage = () => {
                     <td className="py-3.5 px-4 text-right font-mono font-bold text-gray-900">
                       {Number(item.quantity_on_hand).toLocaleString()}
                     </td>
+                    <td className="py-3.5 px-4 text-right font-mono font-medium text-blue-700">
+                      {Number(item.received_qty || 0).toLocaleString()}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-mono font-bold text-rose-600">
+                      {Number(item.dispatched_qty || 0).toLocaleString()}
+                    </td>
                     <td className="py-3.5 px-4 text-right font-mono text-amber-600 font-medium">
                       {Number(item.quantity_reserved).toLocaleString()}
                     </td>
@@ -389,6 +408,46 @@ const DailyStockReportPage = () => {
                         <Eye size={18} />
                       </button>
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card className="overflow-hidden">
+        <Card.Header>
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">Today&apos;s Outward Dispatch Details</h3>
+            <p className="text-xs text-gray-500 mt-1">Posted outward movements included in today&apos;s stock balance</p>
+          </div>
+        </Card.Header>
+        {isOutwardLoading ? (
+          <div className="p-8 flex justify-center"><Loader /></div>
+        ) : outwardItems.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-500">No outward dispatches posted today.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase text-gray-500">
+                <tr>
+                  <th className="py-3 px-4">Outward No.</th><th className="py-3 px-4">Dispatch Date</th>
+                  <th className="py-3 px-4">SLN Challan</th><th className="py-3 px-4">Customer</th>
+                  <th className="py-3 px-4">Product</th><th className="py-3 px-4 text-right">Dispatched Qty</th>
+                  <th className="py-3 px-4">Vehicle</th><th className="py-3 px-4">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {outwardItems.map((row, index) => (
+                  <tr key={`${row.dispatch_number}-${row.product_code}-${index}`}>
+                    <td className="py-3 px-4 font-mono font-semibold">{row.dispatch_number}</td>
+                    <td className="py-3 px-4">{row.dispatch_date}</td>
+                    <td className="py-3 px-4 font-mono">{row.sln_challan_number || '-'}</td>
+                    <td className="py-3 px-4">{row.customer_name || '-'}</td>
+                    <td className="py-3 px-4">{row.product_code} — {row.product_name}</td>
+                    <td className="py-3 px-4 text-right font-mono font-bold text-rose-600">{Number(row.dispatched_qty || 0).toLocaleString()} {row.uom_code || ''}</td>
+                    <td className="py-3 px-4">{row.vehicle_number || '-'}</td><td className="py-3 px-4">{row.status}</td>
                   </tr>
                 ))}
               </tbody>

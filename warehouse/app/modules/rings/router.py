@@ -84,7 +84,10 @@ async def delete_rings_inward(
 ) -> dict:
     service = RingsService(db)
     await service.delete_inward(inward_id, _company(context), current_user.id)
-    return success_response(data=None, message="Rings inward deleted and stock reversed")
+    return success_response(
+        data=None,
+        message="Rings inward permanently deleted; posted stock was reversed",
+    )
 
 
 @router.post("/picks", response_model=StandardResponse[RingsDocumentResponse])

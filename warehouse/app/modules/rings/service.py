@@ -665,11 +665,9 @@ class RingsService:
         inward = await self.repo.get_by_id(inward_id, company_id)
         if not inward or inward.document_type != RingsDocumentType.INWARD.value:
             raise NotFoundException("Rings inward not found")
-        if inward.status == RingsDocumentStatus.CANCELLED.value:
-            raise ConflictException("Rings inward is already deleted")
-        await self._reverse_inward_stock(inward, company_id, user_id, "delete")
-        inward.status = RingsDocumentStatus.CANCELLED.value
-        inward.updated_by_id = user_id
+        document_number = inward.document_number
+        if inward.status == RingsDocumentStatus.POSTED.value:
+            await self._reverse_inward_stock(inward, company_id, user_id, "delete")
         await log_audit(
             db=self.db,
             user_id=user_id,
@@ -679,10 +677,15 @@ class RingsService:
             entity_name="RingsDocument",
             entity_id=str(inward.id),
             new_values={
-                "document_number": inward.document_number,
-                "status": RingsDocumentStatus.CANCELLED.value,
+                "document_number": document_number,
+                "status": "DELETED",
             },
         )
+        # This endpoint is an explicit hard delete.  Stock is reversed above for
+        # posted documents; lines are removed by the document relationship's
+        # delete-orphan cascade.  Superseded stock journals remain as audit data
+        # but operational stock/ledger/report queries exclude them.
+        await self.db.delete(inward)
         await self.db.commit()
 
     async def _reverse_inward_stock(

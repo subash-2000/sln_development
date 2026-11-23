@@ -40,7 +40,7 @@ class ReportingService:
             skip=pagination.offset,
             limit=pagination.limit
         )
-        total = await self.repo.count_current_stock_report(company_id, filters)
+        total = await self.repo.count_current_stock_report(company_id, filters)        movement_totals = await self.repo.get_rings_stock_movement_totals(company_id)
 
         rows = []
         for q in quants:
@@ -55,7 +55,7 @@ class ReportingService:
                 batch_number=q.batch_number,
                 quantity_on_hand=q.quantity_on_hand,
                 quantity_reserved=q.quantity_reserved,
-                quantity_available=q.quantity_available
+                quantity_available=q.quantity_available,                received_qty=movement_totals.get(q.product_id, {}).get("received_qty", 0),                dispatched_qty=movement_totals.get(q.product_id, {}).get("dispatched_qty", 0)
             ))
         
         return rows, total
@@ -177,18 +177,7 @@ class ReportingService:
         )
         total = await self.repo.count_inward_summary(company_id, filters)
 
-        rows = []
-        for item in data:
-            rows.append(InwardSummaryRow(
-                transaction_number=item["transaction_number"],
-                confirmed_at=item["confirmed_at"],
-                vendor_name=item["vendor_name"],
-                product_code=item["product_code"],
-                product_name=item["product_name"],
-                uom_code=item["uom_code"],
-                quantity=item["quantity"],
-                status=item["status"]
-            ))
+        # Keep every field produced by the repository.  Rebuilding this model        # with only the basic table columns silently replaced all Excel-only        # inward metadata (pallets, boxes, rate, weights, challan, etc.) with        # schema defaults.        rows = [InwardSummaryRow(**item) for item in data]
 
         return rows, total
 
@@ -220,7 +209,7 @@ class ReportingService:
                 dispatched_qty=item["dispatched_qty"],
                 status=item["status"],
                 transporter_name=item["transporter_name"],
-                vehicle_number=item["vehicle_number"]
+                vehicle_number=item["vehicle_number"],                driver_name=item.get("driver_name"),                driver_phone=item.get("driver_phone"),                lr_number=item.get("lr_number"),                eway_bill_number=item.get("eway_bill_number"),                sln_challan_number=item.get("sln_challan_number"),                supplier_invoice_number=item.get("supplier_invoice_number"),                po_number=item.get("po_number"),                rate=item.get("rate") or 0,
             ))
 
         return rows, total

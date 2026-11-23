@@ -106,6 +106,34 @@ class ReportingRepository:
         result = await self.db.execute(stmt)
         return result.scalar_one()
 
+    async def get_rings_stock_movement_totals(
+        self, company_id: uuid.UUID
+    ) -> dict[uuid.UUID, dict[str, Decimal]]:
+        """Return posted Rings receipts and dispatches per product for stock summary."""
+        from app.models.rings import RingsDocument, RingsDocumentLine
+
+        stmt = (
+            select(
+                RingsDocumentLine.product_id,
+                RingsDocument.document_type,
+                func.sum(RingsDocumentLine.quantity).label("quantity"),
+            )
+            .join(RingsDocument, RingsDocument.id == RingsDocumentLine.document_id)
+            .where(and_(
+                RingsDocument.company_id == company_id,
+                RingsDocument.status == "POSTED",
+                RingsDocument.document_type.in_(["INWARD", "OUTWARD"]),
+            ))
+            .group_by(RingsDocumentLine.product_id, RingsDocument.document_type)
+        )
+        result = await self.db.execute(stmt)
+        totals: dict[uuid.UUID, dict[str, Decimal]] = {}
+        for product_id, document_type, quantity in result.all():
+            values = totals.setdefault(product_id, {"received_qty": Decimal("0"), "dispatched_qty": Decimal("0")})
+            key = "received_qty" if document_type == "INWARD" else "dispatched_qty"
+            values[key] = Decimal(quantity or 0)
+        return totals
+
     async def get_vendor_stock_report(
         self,
         company_id: uuid.UUID,
@@ -383,6 +411,7 @@ class ReportingRepository:
         stmt = (
             select(
                 StockTransaction.transaction_number,
+                RingsDocument.document_number.label("inward_number"),
                 func.cast(StockTransaction.confirmed_at, Date).label("confirmed_at"),
                 Vendor.name.label("vendor_name"),
                 Product.sku.label("product_code"),
@@ -390,7 +419,10 @@ class ReportingRepository:
                 UOM.code.label("uom_code"),
                 StockMove.quantity,
                 StockTransaction.status,
-                RingsDocument.supplier_document_number.label("challan_number"),
+                func.coalesce(
+                    RingsDocument.supplier_document_number,
+                    StockTransaction.reference_document_number,
+                ).label("challan_number"),
                 func.coalesce(RingsDocumentLine.pallet_count, 0).label("total_pallets"),
                 func.coalesce(RingsDocumentLine.qty_per_pallet, 0).label("qty_per_pallet"),
                 func.coalesce(RingsDocumentLine.box_count, 0).label("total_boxes"),
@@ -428,6 +460,12 @@ class ReportingRepository:
             )
             
             .where(StockTransaction.transaction_type == TransactionType.RECEIPT.value)
+            .where(
+                or_(
+                    RingsDocument.status == "POSTED",
+                    ~StockTransaction.remarks.ilike("Rings % inward RIN-%"),
+                )
+            )
         )
 
         if company_id:
@@ -455,7 +493,11 @@ class ReportingRepository:
         if filters.date_to:
             stmt = stmt.where(func.cast(StockTransaction.confirmed_at, Date) <= filters.date_to)
 
-        stmt = stmt.order_by(Product.sku.asc(), StockTransaction.transaction_number.asc())
+        stmt = stmt.order_by(
+            StockTransaction.confirmed_at.desc(),
+            RingsDocument.document_number.asc(),
+            Product.sku.asc(),
+        )
         stmt = stmt.offset(skip).limit(limit)
 
         result = await self.db.execute(stmt)
@@ -467,14 +509,22 @@ class ReportingRepository:
         filters: InventoryReportFilter
     ) -> int:
         from app.core.constants import TransactionType
+        from app.models.rings import RingsDocument
         stmt = (
             select(func.count())
             .select_from(StockTransaction)
             .join(StockMove, StockTransaction.id == StockMove.transaction_id)
             .join(Product, StockMove.product_id == Product.id)
             .outerjoin(Vendor, StockTransaction.partner_vendor_id == Vendor.id)
+            .outerjoin(RingsDocument, RingsDocument.stock_transaction_id == StockTransaction.id)
             
             .where(StockTransaction.transaction_type == TransactionType.RECEIPT.value)
+            .where(
+                or_(
+                    RingsDocument.status == "POSTED",
+                    ~StockTransaction.remarks.ilike("Rings % inward RIN-%"),
+                )
+            )
         )
 
         if company_id:
@@ -512,11 +562,12 @@ class ReportingRepository:
         skip: int = 0,
         limit: int = 100
     ) -> List[dict]:
-        """Fetch Outward Summary (Dispatch Orders)."""
+        """Fetch generic dispatch orders and posted Rings outward documents."""
         from app.models.logistics import DispatchOrder, DispatchOrderLine
         from app.models.customer import Customer
+        from app.models.rings import RingsDocument, RingsDocumentLine
 
-        stmt = (
+        generic_stmt = (
             select(
                 DispatchOrder.dispatch_number,
                 DispatchOrder.dispatch_date,
@@ -528,7 +579,15 @@ class ReportingRepository:
                 DispatchOrderLine.dispatched_qty,
                 DispatchOrder.status,
                 DispatchOrder.transporter_name,
-                DispatchOrder.vehicle_number
+                DispatchOrder.vehicle_number,
+                DispatchOrder.driver_name,
+                DispatchOrder.driver_phone,
+                DispatchOrder.lr_number,
+                DispatchOrder.eway_bill_number,
+                func.cast(None, String).label("sln_challan_number"),
+                func.cast(None, String).label("supplier_invoice_number"),
+                func.cast(None, String).label("po_number"),
+                func.cast(None, Numeric).label("rate")
             )
             .join(DispatchOrderLine, DispatchOrder.id == DispatchOrderLine.dispatch_order_id)
             .join(Product, DispatchOrderLine.product_id == Product.id)
@@ -539,18 +598,16 @@ class ReportingRepository:
         )
 
         if company_id:
-            stmt = stmt.where(DispatchOrder.company_id == company_id)
-        if company_id:
-            stmt = stmt.where(DispatchOrder.company_id == company_id)
+            generic_stmt = generic_stmt.where(DispatchOrder.company_id == company_id)
         if filters.vendor_id:
-            stmt = stmt.where(DispatchOrder.vendor_id == filters.vendor_id)
+            generic_stmt = generic_stmt.where(DispatchOrder.vendor_id == filters.vendor_id)
         if getattr(filters, "vendor_name", None):
-            stmt = stmt.where(Vendor.name.ilike(f"%{filters.vendor_name}%"))
+            generic_stmt = generic_stmt.where(Vendor.name.ilike(f"%{filters.vendor_name}%"))
         if getattr(filters, "customer_name", None):
-            stmt = stmt.where(Customer.name.ilike(f"%{filters.customer_name}%"))
+            generic_stmt = generic_stmt.where(Customer.name.ilike(f"%{filters.customer_name}%"))
         if getattr(filters, "search", None):
             search_pat = f"%{filters.search}%"
-            stmt = stmt.where(
+            generic_stmt = generic_stmt.where(
                 or_(
                     DispatchOrder.dispatch_number.ilike(search_pat),
                     Product.sku.ilike(search_pat),
@@ -561,13 +618,56 @@ class ReportingRepository:
                 )
             )
         if filters.product_id:
-            stmt = stmt.where(DispatchOrderLine.product_id == filters.product_id)
+            generic_stmt = generic_stmt.where(DispatchOrderLine.product_id == filters.product_id)
         if filters.date_from:
-            stmt = stmt.where(DispatchOrder.dispatch_date >= filters.date_from)
+            generic_stmt = generic_stmt.where(DispatchOrder.dispatch_date >= filters.date_from)
         if filters.date_to:
-            stmt = stmt.where(DispatchOrder.dispatch_date <= filters.date_to)
+            generic_stmt = generic_stmt.where(DispatchOrder.dispatch_date <= filters.date_to)
 
-        stmt = stmt.order_by(desc(DispatchOrder.dispatch_date), DispatchOrder.dispatch_number)
+        rings_stmt = (
+            select(
+                RingsDocument.document_number.label("dispatch_number"),
+                func.coalesce(RingsDocument.sln_challan_date, RingsDocument.created_at.cast(Date)).label("dispatch_date"),
+                Customer.name.label("customer_name"), Vendor.name.label("vendor_name"),
+                Product.sku.label("product_code"), Product.name.label("product_name"),
+                UOM.code.label("uom_code"), RingsDocumentLine.quantity.label("dispatched_qty"),
+                RingsDocument.status, RingsDocument.transporter_name, RingsDocument.vehicle_number,
+                func.cast(None, String).label("driver_name"), func.cast(None, String).label("driver_phone"),
+                RingsDocument.lr_number, RingsDocument.eway_bill_number, RingsDocument.sln_challan_number,
+                RingsDocument.supplier_customer_invoice_number.label("supplier_invoice_number"),
+                RingsDocument.po_number, RingsDocumentLine.unit_rate.label("rate"),
+            )
+            .join(RingsDocumentLine, RingsDocument.id == RingsDocumentLine.document_id)
+            .join(Product, RingsDocumentLine.product_id == Product.id)
+            .join(UOM, RingsDocumentLine.uom_id == UOM.id)
+            .outerjoin(Customer, RingsDocument.customer_id == Customer.id)
+            .outerjoin(Vendor, RingsDocument.vendor_id == Vendor.id)
+            .where(and_(RingsDocument.document_type == "OUTWARD", RingsDocument.status == "POSTED"))
+        )
+        if company_id:
+            rings_stmt = rings_stmt.where(RingsDocument.company_id == company_id)
+        if filters.vendor_id:
+            rings_stmt = rings_stmt.where(RingsDocument.vendor_id == filters.vendor_id)
+        if getattr(filters, "vendor_name", None):
+            rings_stmt = rings_stmt.where(Vendor.name.ilike(f"%{filters.vendor_name}%"))
+        if getattr(filters, "customer_name", None):
+            rings_stmt = rings_stmt.where(Customer.name.ilike(f"%{filters.customer_name}%"))
+        if getattr(filters, "search", None):
+            search_pat = f"%{filters.search}%"
+            rings_stmt = rings_stmt.where(or_(RingsDocument.document_number.ilike(search_pat),
+                RingsDocument.sln_challan_number.ilike(search_pat), Product.sku.ilike(search_pat),
+                Product.name.ilike(search_pat), Customer.name.ilike(search_pat), Vendor.name.ilike(search_pat),
+                RingsDocument.vehicle_number.ilike(search_pat)))
+        if filters.product_id:
+            rings_stmt = rings_stmt.where(RingsDocumentLine.product_id == filters.product_id)
+        rings_date = func.coalesce(RingsDocument.sln_challan_date, RingsDocument.created_at.cast(Date))
+        if filters.date_from:
+            rings_stmt = rings_stmt.where(rings_date >= filters.date_from)
+        if filters.date_to:
+            rings_stmt = rings_stmt.where(rings_date <= filters.date_to)
+
+        combined = generic_stmt.union_all(rings_stmt).subquery()
+        stmt = select(combined).order_by(desc(combined.c.dispatch_date), combined.c.dispatch_number)
         stmt = stmt.offset(skip).limit(limit)
 
         result = await self.db.execute(stmt)
@@ -579,6 +679,8 @@ class ReportingRepository:
         filters: InventoryReportFilter
     ) -> int:
         from app.models.logistics import DispatchOrder, DispatchOrderLine
+        from app.models.customer import Customer
+        from app.models.rings import RingsDocument, RingsDocumentLine
         stmt = (
             select(func.count())
             .select_from(DispatchOrder)
@@ -615,8 +717,42 @@ class ReportingRepository:
             stmt = stmt.where(DispatchOrderLine.product_id == filters.product_id)
         if filters.date_from:
             stmt = stmt.where(DispatchOrder.dispatch_date >= filters.date_from)
+        if filters.date_to:
+            stmt = stmt.where(DispatchOrder.dispatch_date <= filters.date_to)
         result = await self.db.execute(stmt)
-        return result.scalar_one()
+        total = result.scalar_one()
+
+        rings_stmt = (
+            select(func.count()).select_from(RingsDocument)
+            .join(RingsDocumentLine, RingsDocument.id == RingsDocumentLine.document_id)
+            .join(Product, RingsDocumentLine.product_id == Product.id)
+            .outerjoin(Customer, RingsDocument.customer_id == Customer.id)
+            .outerjoin(Vendor, RingsDocument.vendor_id == Vendor.id)
+            .where(and_(RingsDocument.document_type == "OUTWARD", RingsDocument.status == "POSTED"))
+        )
+        if company_id:
+            rings_stmt = rings_stmt.where(RingsDocument.company_id == company_id)
+        if filters.vendor_id:
+            rings_stmt = rings_stmt.where(RingsDocument.vendor_id == filters.vendor_id)
+        if getattr(filters, "vendor_name", None):
+            rings_stmt = rings_stmt.where(Vendor.name.ilike(f"%{filters.vendor_name}%"))
+        if getattr(filters, "customer_name", None):
+            rings_stmt = rings_stmt.where(Customer.name.ilike(f"%{filters.customer_name}%"))
+        if getattr(filters, "search", None):
+            search_pat = f"%{filters.search}%"
+            rings_stmt = rings_stmt.where(or_(RingsDocument.document_number.ilike(search_pat),
+                RingsDocument.sln_challan_number.ilike(search_pat), Product.sku.ilike(search_pat),
+                Product.name.ilike(search_pat), Customer.name.ilike(search_pat), Vendor.name.ilike(search_pat),
+                RingsDocument.vehicle_number.ilike(search_pat)))
+        if filters.product_id:
+            rings_stmt = rings_stmt.where(RingsDocumentLine.product_id == filters.product_id)
+        rings_date = func.coalesce(RingsDocument.sln_challan_date, RingsDocument.created_at.cast(Date))
+        if filters.date_from:
+            rings_stmt = rings_stmt.where(rings_date >= filters.date_from)
+        if filters.date_to:
+            rings_stmt = rings_stmt.where(rings_date <= filters.date_to)
+        rings_result = await self.db.execute(rings_stmt)
+        return total + rings_result.scalar_one()
 
     async def get_vendor_statement(
         self,

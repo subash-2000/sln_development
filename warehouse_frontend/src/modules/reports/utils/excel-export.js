@@ -164,7 +164,7 @@ export const exportInwardReportToExcel = async (items = [], filters = {}) => {
       const row = ws.getRow(currRow);
       const sku = item.product_code || item.sku || item.product_name || '-';
       const challanNo = item.challan_number || item.reference_number || '-';
-      const grnNo = item.transaction_number || '-';
+      const grnNo = item.inward_number || item.transaction_number || '-';
       const recDate = formatDate(item.confirmed_at || item.receipt_date || item.movement_date);
       const transporter = item.transporter_name || '-';
       const qty = Number(item.quantity) || Number(item.dispatched_qty) || 0;

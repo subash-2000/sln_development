@@ -166,7 +166,7 @@ def export_exact_inward_receipt(
     for item in sorted_items:
         sku = str(_get_val(item, "product_code", "sku", "product_name") or "-")
         challan_no = str(_get_val(item, "challan_number", "reference_number") or "-")
-        grn_no = str(_get_val(item, "transaction_number") or "-")
+        grn_no = str(_get_val(item, "inward_number", "transaction_number") or "-")
         rec_date = _safe_date(_get_val(item, "confirmed_at", "receipt_date", "movement_date"))
         transporter = str(_get_val(item, "transporter_name") or "-")
         qty = _safe_float(_get_val(item, "quantity", "dispatched_qty", "qty"), 0.0)
@@ -408,14 +408,17 @@ def export_exact_stock_summary(
         on_hand = _safe_float(_get_val(item, "quantity_on_hand", "quantity", "on_hand"), 0.0)
         reserved = _safe_float(_get_val(item, "quantity_reserved", "reserved"), 0.0)
         available = _safe_float(_get_val(item, "quantity_available", "available"), on_hand)
+        received = _safe_float(_get_val(item, "received_qty"), on_hand)
+        dispatched = _safe_float(_get_val(item, "dispatched_qty"), 0.0)
+        opening = on_hand + dispatched - received
         ring_wt = 0.034
 
         ws.cell(row=curr_row, column=2, value=sku)                                      # B: TYPES
         ws.cell(row=curr_row, column=3, value=0)                                        # C: Monthly Call off
-        ws.cell(row=curr_row, column=4, value=on_hand)                                  # D: Opening Bal
-        ws.cell(row=curr_row, column=5, value=f"=F{curr_row}-D{curr_row}")              # E: Rec Qty
-        ws.cell(row=curr_row, column=6, value=on_hand)                                  # F: Total Received
-        ws.cell(row=curr_row, column=7, value=reserved)                                 # G: Qty Lifted
+        ws.cell(row=curr_row, column=4, value=opening)                                  # D: Opening Bal
+        ws.cell(row=curr_row, column=5, value=received)                                 # E: Rec Qty
+        ws.cell(row=curr_row, column=6, value=opening + received)                       # F: Total Received
+        ws.cell(row=curr_row, column=7, value=dispatched)                               # G: Qty Lifted
         ws.cell(row=curr_row, column=8, value=available)                                # H: Balance Qty
         ws.cell(row=curr_row, column=9, value=f"=G{curr_row}-C{curr_row}")              # I: Call off diff
         ws.cell(row=curr_row, column=10, value=ring_wt)                                 # J: RING Weight

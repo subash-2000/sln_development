@@ -58,7 +58,7 @@ const RingsInwardPage = () => {
           actions={[
             { type: 'view', label: 'View Details', onClick: () => navigate(`/rings/inward/${row.id}`) },
             { type: 'edit', label: 'Edit Inward', onClick: () => navigate(`/rings/inward/${row.id}/edit`), hidden: row.status === 'CANCELLED' },
-            { type: 'delete', label: 'Delete Inward', onClick: () => setDeleteTarget(row), variant: 'danger', hidden: row.status === 'CANCELLED' },
+            { type: 'delete', label: 'Delete Inward', onClick: () => setDeleteTarget(row), variant: 'danger' },
           ]}
         />
       )}
@@ -84,10 +84,10 @@ const RingsInwardPage = () => {
       title="Delete inward transaction?"
       description={
         deleteTarget
-          ? `This will cancel ${deleteTarget.document_number} and reverse its stock. It cannot be deleted if its stock has already been picked or dispatched.`
+          ? `This will permanently delete ${deleteTarget.document_number}, reverse its posted stock, and remove it from inward reports. If its stock was picked or dispatched, delete that dependent outward transaction first.`
           : ''
       }
-      confirmLabel="Delete and reverse stock"
+      confirmLabel="Permanently delete"
       isLoading={deleteInward.isPending}
       onClose={() => setDeleteTarget(null)}
       onConfirm={async () => {

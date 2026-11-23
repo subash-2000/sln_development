@@ -213,7 +213,7 @@ async def get_stock_quants(
     product_id: uuid.UUID | None = Query(None, description="Filter by product"),
     vendor_id: uuid.UUID | None = Query(None, description="Filter by vendor ownership"),
     batch_number: str | None = Query(None, description="Filter by batch number"),
-    has_stock: bool | None = Query(None, description="Filter to only quants with on_hand > 0"),
+    has_stock: bool | None = Query(True, description="Filter to only quants with on_hand > 0"),
     context: TenantContext = Depends(get_current_tenant_context),
     current_user: User = Depends(require_permission("inventory.read")),
     db: AsyncSession = Depends(get_db),

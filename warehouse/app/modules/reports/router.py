@@ -501,6 +501,7 @@ async def export_report_excel(
     elif r_type in {"daily_stock", "current_stock"}:
         filters = InventoryReportFilter(search=search)
         quants = await service.repo.get_current_stock_report(company_id, filters, skip=0, limit=2000)
+        movement_totals = await service.repo.get_rings_stock_movement_totals(company_id)
         rows = [
             {
                 "product_code": q.product.sku if q.product else "-",
@@ -508,6 +509,8 @@ async def export_report_excel(
                 "quantity_on_hand": float(q.quantity_on_hand or 0),
                 "quantity_reserved": float(q.quantity_reserved or 0),
                 "quantity_available": float(q.quantity_available or 0),
+                "received_qty": float(movement_totals.get(q.product_id, {}).get("received_qty", 0)),
+                "dispatched_qty": float(movement_totals.get(q.product_id, {}).get("dispatched_qty", 0)),
             }
             for q in quants
         ]

@@ -31,7 +31,7 @@ const InwardReportViewModal = ({ open, onClose, data }) => {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-gray-900 tracking-wide font-mono">
-                  {data.transaction_number || 'INWARD RECEIPT'}
+                  {data.inward_number || data.transaction_number || 'INWARD RECEIPT'}
                 </h2>
                 <StatusBadge status={data.status || 'COMPLETED'} />
               </div>
@@ -56,6 +56,18 @@ const InwardReportViewModal = ({ open, onClose, data }) => {
               Supplier & Receipt Info
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-gray-500">Stock GRN</p>
+                <p className="text-sm font-mono font-semibold text-gray-900 mt-0.5">
+                  {data.transaction_number || 'N/A'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Supplier Challan / Invoice</p>
+                <p className="text-sm font-mono font-semibold text-gray-900 mt-0.5">
+                  {data.challan_number || 'N/A'}
+                </p>
+              </div>
               <div>
                 <p className="text-xs text-gray-500">Supplier / Vendor</p>
                 <p className="text-sm font-semibold text-gray-900 mt-0.5 flex items-center gap-1.5">

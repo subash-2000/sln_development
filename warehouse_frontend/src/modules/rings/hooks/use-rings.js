@@ -46,6 +46,8 @@ export const useDeleteRingsInward = () => {
       queryClient.invalidateQueries({ queryKey: ['rings-documents'] });
       queryClient.invalidateQueries({ queryKey: ['rings-stock'] });
       queryClient.invalidateQueries({ queryKey: ['rings-day-close'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
   });
 };

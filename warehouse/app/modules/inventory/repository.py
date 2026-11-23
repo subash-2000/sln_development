@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -207,12 +207,35 @@ class InventoryRepository:
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[list[StockLedger], int]:
-        """Query immutable ledger entries with total count."""
-        stmt = select(StockLedger).where(StockLedger.company_id == company_id)
+        """Query operational ledger entries, excluding superseded Rings edit/void history."""
+        from app.models.rings import RingsDocument
+
+        transaction_remarks = func.coalesce(StockTransaction.remarks, "")
+        current_rings_entry = or_(
+            ~transaction_remarks.ilike("Rings %"),
+            RingsDocument.status == "POSTED",
+        )
+        current_rings_entry = and_(
+            current_rings_entry,
+            ~transaction_remarks.ilike("Reverse inward %"),
+            ~transaction_remarks.ilike("Return pick %"),
+            ~func.coalesce(StockLedger.reference, "").ilike("RINGS_VOID:%"),
+            ~func.coalesce(StockLedger.reference, "").ilike("RINGS_INWARD_VOID:%"),
+        )
+
+        stmt = (
+            select(StockLedger)
+            .join(StockTransaction, StockLedger.transaction_id == StockTransaction.id)
+            .outerjoin(RingsDocument, RingsDocument.stock_transaction_id == StockTransaction.id)
+            .where(StockLedger.company_id == company_id, current_rings_entry)
+            .distinct()
+        )
         count_stmt = (
-            select(func.count())
+            select(func.count(func.distinct(StockLedger.id)))
             .select_from(StockLedger)
-            .where(StockLedger.company_id == company_id)
+            .join(StockTransaction, StockLedger.transaction_id == StockTransaction.id)
+            .outerjoin(RingsDocument, RingsDocument.stock_transaction_id == StockTransaction.id)
+            .where(StockLedger.company_id == company_id, current_rings_entry)
         )
 
         if warehouse_id:
@@ -275,7 +298,28 @@ class InventoryRepository:
         offset: int = 0,
         limit: int = 50,
     ) -> tuple[list[StockTransaction], int]:
-        """List stock transactions with filtering and pagination."""
+        """List current operational transactions; hide superseded Rings journals."""
+        from app.models.rings import RingsDocument
+
+        transaction_remarks = func.coalesce(StockTransaction.remarks, "")
+        rings_generated = or_(
+            transaction_remarks.ilike("Rings %"),
+            transaction_remarks.ilike("Reverse rings %"),
+            transaction_remarks.ilike("Return stock for pick %"),
+            func.coalesce(StockTransaction.reference_document_type, "").in_([
+                "RINGS_INWARD", "RINGS_OUTWARD", "RINGS_INWARD_VOID", "RINGS_PICK_VOID"
+            ]),
+        )
+        has_posted_rings_document = (
+            select(RingsDocument.id)
+            .where(
+                RingsDocument.stock_transaction_id == StockTransaction.id,
+                RingsDocument.status == "POSTED",
+            )
+            .exists()
+        )
+        operational_transaction = or_(~rings_generated, has_posted_rings_document)
+
         stmt = (
             select(StockTransaction)
             .options(
@@ -284,12 +328,18 @@ class InventoryRepository:
                 selectinload(StockTransaction.partner_vendor),
                 selectinload(StockTransaction.partner_customer),
             )
-            .where(StockTransaction.company_id == company_id)
+            .where(
+                StockTransaction.company_id == company_id,
+                operational_transaction,
+            )
         )
         count_stmt = (
             select(func.count())
             .select_from(StockTransaction)
-            .where(StockTransaction.company_id == company_id)
+            .where(
+                StockTransaction.company_id == company_id,
+                operational_transaction,
+            )
         )
 
         if warehouse_id:
