@@ -67,6 +67,7 @@ const InwardDocumentUpload = ({ onParsed, render, multiple = false, getFormPalle
   const [lastParse, setLastParse] = useState(null);
   const [fileLabels, setFileLabels] = useState([]);
   const [showMapping, setShowMapping] = useState(false);
+  const [progress, setProgress] = useState('');
 
   const handleFiles = async (fileList) => {
     const files = Array.from(fileList || []).filter((f) => f);
@@ -76,7 +77,15 @@ const InwardDocumentUpload = ({ onParsed, render, multiple = false, getFormPalle
     let merged = lastParse;
     const labels = multiple ? [...fileLabels] : [];
     try {
-      for (const file of files) {
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        if (!file.name.toLowerCase().endsWith('.pdf')) {
+          throw new Error(`${file.name}: only PDF files are supported.`);
+        }
+        if (file.size > 15 * 1024 * 1024) {
+          throw new Error(`${file.name}: file is larger than the 15 MB limit.`);
+        }
+        setProgress(`Reading PDF ${index + 1} of ${files.length}: ${file.name}`);
         const data = await logisticsApi.inward.parseDocument(file);
         merged = mergeParsed(merged, data, file.name);
         labels.push(file.name);
@@ -87,13 +96,19 @@ const InwardDocumentUpload = ({ onParsed, render, multiple = false, getFormPalle
       setShowMapping(false);
       onParsed?.(merged);
     } catch (err) {
-      setError(err?.message || 'Failed to parse PDF');
+      const message = err?.response?.data?.message || err?.message || 'Failed to parse PDF';
+      setError(
+        message === 'Network Error'
+          ? 'PDF upload was interrupted. Please keep this page open and try again on a stable connection.'
+          : message
+      );
       if (!multiple) {
         setLastParse(null);
         setFileLabels([]);
       }
     } finally {
       setIsParsing(false);
+      setProgress('');
       if (inputRef.current) inputRef.current.value = '';
     }
   };
@@ -111,7 +126,7 @@ const InwardDocumentUpload = ({ onParsed, render, multiple = false, getFormPalle
       <input
         ref={inputRef}
         type="file"
-        accept="application/pdf"
+        accept=".pdf,application/pdf"
         className="hidden"
         multiple={multiple}
         disabled={isParsing}
@@ -134,6 +149,7 @@ const InwardDocumentUpload = ({ onParsed, render, multiple = false, getFormPalle
           </Button>
         )}
       </div>
+      {isParsing && progress && <p className="text-xs text-blue-700 mt-1">{progress} — OCR may take up to 2 minutes per PDF.</p>}
     </>
   );
 

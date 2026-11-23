@@ -56,7 +56,9 @@ export const logisticsApi = {
       form.append('file', file);
       return unwrapData(
         await apiClient.post(ENDPOINTS.LOGISTICS.INWARD_PARSE, form, {
-          headers: { 'Content-Type': 'multipart/form-data' },
+          // Scanned PDFs require OCR and commonly take 1-2 minutes.  The
+          // default API timeout is 30 seconds, which aborted valid parses.
+          timeout: 300000,
         })
       );
     },

@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -717,7 +718,10 @@ class LogisticsService:
         filename: str,
         company_id: uuid.UUID,
     ) -> InwardDocumentParseResponse:
-        parsed = parse_inward_pdf(file_bytes, filename)
+        # OCR for scanned PDFs is CPU/blocking work and can take over a minute.
+        # Keep it off the async API event loop so auth refreshes and other API
+        # requests remain responsive while the document is being read.
+        parsed = await asyncio.to_thread(parse_inward_pdf, file_bytes, filename)
         data = result_to_dict(parsed)
 
         vendor: Vendor | None = None
