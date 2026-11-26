@@ -108,13 +108,14 @@ class ReportingRepository:
 
     async def get_rings_stock_movement_totals(
         self, company_id: uuid.UUID
-    ) -> dict[uuid.UUID, dict[str, Decimal]]:
-        """Return posted Rings receipts and dispatches per product for stock summary."""
+    ) -> dict[tuple[uuid.UUID, str], dict[str, Decimal]]:
+        """Return posted Rings receipts and dispatches per product and batch."""
         from app.models.rings import RingsDocument, RingsDocumentLine
 
         stmt = (
             select(
                 RingsDocumentLine.product_id,
+                RingsDocumentLine.heat_number,
                 RingsDocument.document_type,
                 func.sum(RingsDocumentLine.quantity).label("quantity"),
             )
@@ -124,12 +125,20 @@ class ReportingRepository:
                 RingsDocument.status == "POSTED",
                 RingsDocument.document_type.in_(["INWARD", "OUTWARD"]),
             ))
-            .group_by(RingsDocumentLine.product_id, RingsDocument.document_type)
+            .group_by(
+                RingsDocumentLine.product_id,
+                RingsDocumentLine.heat_number,
+                RingsDocument.document_type,
+            )
         )
         result = await self.db.execute(stmt)
-        totals: dict[uuid.UUID, dict[str, Decimal]] = {}
-        for product_id, document_type, quantity in result.all():
-            values = totals.setdefault(product_id, {"received_qty": Decimal("0"), "dispatched_qty": Decimal("0")})
+        totals: dict[tuple[uuid.UUID, str], dict[str, Decimal]] = {}
+        for product_id, heat_number, document_type, quantity in result.all():
+            batch = (heat_number or "").strip()
+            values = totals.setdefault(
+                (product_id, batch),
+                {"received_qty": Decimal("0"), "dispatched_qty": Decimal("0")},
+            )
             key = "received_qty" if document_type == "INWARD" else "dispatched_qty"
             values[key] = Decimal(quantity or 0)
         return totals

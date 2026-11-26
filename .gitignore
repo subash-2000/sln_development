@@ -145,3 +145,4 @@ Desktop.ini
 *.sln
 *~
 /odoo
+/uploads

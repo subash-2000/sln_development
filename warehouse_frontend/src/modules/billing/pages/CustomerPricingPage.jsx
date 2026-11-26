@@ -7,7 +7,7 @@ import Card from '../../../components/ui/Card';
 import DataTable from '../../../components/tables/DataTable';
 import apiClient from '../../../services/api/client';
 import { unwrapList } from '../../../services/api/unwrap';
-import { useCustomers } from '../../customers/hooks/use-customers';
+import { useVendors } from '../../vendors/hooks/use-vendors';
 import { useAuthStore } from '../../../store/auth.store';
 
 const field =
@@ -22,13 +22,13 @@ const bases = [
   'FIXED',
 ];
 const initialForm = () => ({
-  customer_id: '',
+  vendor_id: '',
   code: '',
   name: '',
   valid_from: new Date().toISOString().slice(0, 10),
   valid_to: '',
-  service_type: 'HANDLING_IN',
-  calculation_basis: 'PER_TRANSACTION',
+  service_type: 'STORAGE',
+  calculation_basis: 'PER_BAG_PER_DAY',
   unit_rate: '',
   min_charge: '0',
 });
@@ -38,24 +38,24 @@ export default function CustomerPricingPage() {
   const queryClient = useQueryClient();
   const [show, setShow] = useState(false);
   const [form, setForm] = useState(initialForm);
-  const { data: customersData } = useCustomers({ page_size: 200, status: 'ACTIVE' });
+  const { data: vendorsData } = useVendors({ page_size: 200, status: 'ACTIVE' });
   const { data, isLoading } = useQuery({
-    queryKey: ['customer-pricing'],
+    queryKey: ['supplier-pricing'],
     queryFn: async () =>
       unwrapList(await apiClient.get('/rate-cards', { params: { page_size: 200 } })),
   });
   const create = useMutation({
     mutationFn: (payload) => apiClient.post('/rate-cards', payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['customer-pricing'] });
+      queryClient.invalidateQueries({ queryKey: ['supplier-pricing'] });
       setShow(false);
       setForm(initialForm());
     },
   });
-  const cards = (data?.items || []).filter((card) => card.customer_id);
+  const cards = (data?.items || []).filter((card) => card.vendor_id);
   const columns = useMemo(
     () => [
-      { key: 'customer_name', label: 'Customer' },
+      { key: 'vendor_name', label: 'Supplier' },
       { key: 'code', label: 'Code', widthClass: 'w-36' },
       { key: 'name', label: 'Name' },
       { key: 'valid_from', label: 'Effective From', type: 'date', widthClass: 'w-40' },
@@ -82,8 +82,8 @@ export default function CustomerPricingPage() {
     try {
       await create.mutateAsync({
         company_id: companyId,
-        customer_id: form.customer_id,
-        vendor_id: null,
+        customer_id: null,
+        vendor_id: form.vendor_id,
         code: form.code,
         name: form.name,
         valid_from: `${form.valid_from}T00:00:00Z`,
@@ -109,12 +109,12 @@ export default function CustomerPricingPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Customer Pricing Master"
-        description="Effective-dated customer warehouse service rates."
+        title="Supplier Pricing Master"
+        description="Effective-dated supplier warehouse service rates."
         breadcrumbs={[
           { label: 'Dashboard', to: '/dashboard' },
-          { label: 'Finance' },
-          { label: 'Customer Pricing' },
+          { label: 'Masters' },
+          { label: 'Supplier Pricing' },
         ]}
         actions={<Button onClick={() => setShow(true)}>New Pricing</Button>}
       />
@@ -127,7 +127,7 @@ export default function CustomerPricingPage() {
         >
           <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-xl">
             <Card.Header className="sticky top-0 z-10 flex items-center justify-between bg-white">
-              <Card.Title>New Customer Pricing</Card.Title>
+              <Card.Title>New Supplier Pricing</Card.Title>
               <button type="button" aria-label="Close" onClick={() => setShow(false)}>
                 <X className="h-5 w-5 text-gray-500" />
               </button>
@@ -135,17 +135,17 @@ export default function CustomerPricingPage() {
             <Card.Body>
               <form onSubmit={save} className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <label className={label}>
-                  Customer *
+                  Supplier *
                   <select
                     required
                     className={field}
-                    value={form.customer_id}
-                    onChange={update('customer_id')}
+                    value={form.vendor_id}
+                    onChange={update('vendor_id')}
                   >
-                    <option value="">Select customer</option>
-                    {(customersData?.items || []).map((customer) => (
-                      <option key={customer.id} value={customer.id}>
-                        {customer.name}
+                    <option value="">Select supplier</option>
+                    {(vendorsData?.items || []).map((vendor) => (
+                      <option key={vendor.id} value={vendor.id}>
+                        {vendor.name}
                       </option>
                     ))}
                   </select>
@@ -241,7 +241,7 @@ export default function CustomerPricingPage() {
         columns={columns}
         data={cards}
         isLoading={isLoading}
-        emptyTitle="No customer pricing found"
+        emptyTitle="No supplier pricing found"
       />
     </div>
   );

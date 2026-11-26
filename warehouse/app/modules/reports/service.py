@@ -55,7 +55,7 @@ class ReportingService:
                 batch_number=q.batch_number,
                 quantity_on_hand=q.quantity_on_hand,
                 quantity_reserved=q.quantity_reserved,
-                quantity_available=q.quantity_available,                received_qty=movement_totals.get(q.product_id, {}).get("received_qty", 0),                dispatched_qty=movement_totals.get(q.product_id, {}).get("dispatched_qty", 0)
+                quantity_available=q.quantity_available,                received_qty=movement_totals.get(                    (q.product_id, (q.batch_number or "").strip()), {}                ).get("received_qty", 0),                dispatched_qty=movement_totals.get(                    (q.product_id, (q.batch_number or "").strip()), {}                ).get("dispatched_qty", 0)
             ))
         
         return rows, total

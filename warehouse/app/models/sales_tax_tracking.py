@@ -17,7 +17,8 @@ class SalesTaxInvoiceTracking(BaseEntity):
         Index("ix_sales_tax_tracking_company_date", "company_id", "invoice_date"),
     )
     company_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
-    customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("customers.id", ondelete="RESTRICT"), nullable=False, index=True)
+    customer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True)
+    vendor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("vendors.id", ondelete="RESTRICT"), nullable=True, index=True)
     delivery_challan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("rings_documents.id", ondelete="RESTRICT"), nullable=False, index=True)
     invoice_number: Mapped[str] = mapped_column(String(100), nullable=False)
     invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -26,4 +27,5 @@ class SalesTaxInvoiceTracking(BaseEntity):
     attachment_path: Mapped[str | None] = mapped_column(String(500))
     remarks: Mapped[str | None] = mapped_column(Text)
     customer = relationship("Customer", lazy="selectin")
+    vendor = relationship("Vendor", lazy="selectin")
     delivery_challan = relationship("RingsDocument", lazy="selectin")

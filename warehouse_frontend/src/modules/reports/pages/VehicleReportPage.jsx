@@ -90,9 +90,25 @@ const VehicleReportPage = () => {
   }, [items, movementType, selectedTransporter, selectedSupplier, searchTerm]);
 
   // Aggregate KPIs
-  const totalMovements = filteredItems.length;
-  const inwardCount = filteredItems.filter((i) => i.movement_type === 'INWARD').length;
-  const outwardCount = filteredItems.filter((i) => i.movement_type === 'OUTWARD').length;
+  const movements = useMemo(() => {
+    const grouped = new Map();
+    filteredItems.forEach((item, index) => {
+      const key = `${item.movement_type}:${item.id || item.reference_number || index}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, { ...item, movementKey: key, productLines: [], totalsByUom: new Map() });
+      }
+      const movement = grouped.get(key);
+      movement.productLines.push(item);
+      if (item.dispatched_qty != null) {
+        const unit = item.uom_code || 'PCS';
+        movement.totalsByUom.set(unit, (movement.totalsByUom.get(unit) || 0) + Number(item.dispatched_qty));
+      }
+    });
+    return [...grouped.values()];
+  }, [filteredItems]);
+  const totalMovements = movements.length;
+  const inwardCount = movements.filter((i) => i.movement_type === 'INWARD').length;
+  const outwardCount = movements.filter((i) => i.movement_type === 'OUTWARD').length;
   const totalDispatchedQty = filteredItems.reduce(
     (sum, i) => sum + (Number(i.dispatched_qty) || 0),
     0
@@ -379,20 +395,10 @@ const VehicleReportPage = () => {
               </button>
             </div>
 
-            {/* Quick Export in Toolbar */}
-            <div className="flex items-center gap-2 lg:col-span-6 justify-between pt-2 border-t border-gray-100">
+            <div className="lg:col-span-6 pt-2 border-t border-gray-100">
               <span className="text-xs text-gray-500">
-                Showing {filteredItems.length} records matching filters
+                Showing {movements.length} movements matching filters
               </span>
-              <Button
-                variant="primary"
-                onClick={handleExportExcel}
-                disabled={filteredItems.length === 0}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-1.5 px-3 text-xs shadow-xs"
-              >
-                <FileSpreadsheet size={15} />
-                {excelButtonLabel}
-              </Button>
             </div>
           </div>
         </Card.Body>
@@ -414,7 +420,7 @@ const VehicleReportPage = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-max text-left text-sm whitespace-nowrap">
               <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-500">
                 <tr>
                   <th className="py-3 px-4">Vehicle Number</th>
@@ -429,11 +435,11 @@ const VehicleReportPage = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
-                {filteredItems.map((item, idx) => {
+                {movements.map((item) => {
                   const isInward = item.movement_type === 'INWARD';
                   return (
                     <tr
-                      key={`${item.id || ''}-${item.reference_number || ''}-${item.material_summary || ''}-${idx}`}
+                      key={item.movementKey}
                       onClick={() => setViewItem(item)}
                       className="hover:bg-blue-50/40 cursor-pointer transition-colors"
                     >
@@ -449,11 +455,11 @@ const VehicleReportPage = () => {
                           >
                             <Truck size={16} />
                           </div>
-                          <div>
+                          <div className="flex items-baseline gap-2">
                             <span className="font-mono font-bold text-gray-900">
                               {item.vehicle_number}
                             </span>
-                            <span className="block text-xs text-gray-400">
+                            <span className="text-xs text-gray-400">
                               {item.vehicle_type || 'Truck'}
                             </span>
                           </div>
@@ -487,9 +493,9 @@ const VehicleReportPage = () => {
                             className={isInward ? 'text-emerald-600' : 'text-blue-600'}
                           />
                           {item.party_name || item.vendor_name || item.destination || '-'}
-                        </div>
-                        <div className="text-xs text-gray-400">
-                          {isInward ? 'Supplier Consignor' : 'Customer Consignee'}
+                          <span className="ml-1 text-xs font-normal text-gray-500">
+                            {isInward ? 'Supplier Consignor' : 'Customer Consignee'}
+                          </span>
                         </div>
                       </td>
 
@@ -500,15 +506,7 @@ const VehicleReportPage = () => {
 
                       {/* Quantity */}
                       <td className="py-3.5 px-4 text-right font-mono font-bold text-gray-900">
-                        {item.dispatched_qty != null
-                          ? Number(item.dispatched_qty).toLocaleString()
-                          : '-'}
-                        <span className="text-xs text-gray-400 font-normal ml-1">
-                          {item.uom_code || 'PCS'}
-                        </span>
-                        <div className="text-xs text-gray-500 font-normal truncate max-w-[140px] text-right">
-                          {item.material_summary || '-'}
-                        </div>
+                        {[...item.totalsByUom].map(([unit, total]) => `${total.toLocaleString()} ${unit}`).join(' / ') || '-'}
                       </td>
 
                       {/* Date */}

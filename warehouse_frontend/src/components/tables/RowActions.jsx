@@ -1,5 +1,5 @@
 import React from 'react';
-import { MoreVertical, Eye, Edit, Copy, Trash2, Power, CheckCircle, XCircle } from 'lucide-react';
+import { MoreVertical, Eye, Edit, Copy, Trash2, Power, CheckCircle, XCircle, FileDown, FileSpreadsheet } from 'lucide-react';
 import Dropdown from '../ui/Dropdown';
 import Button from '../ui/Button';
 
@@ -16,6 +16,8 @@ const RowActions = ({ actions = [] }) => {
       case 'activate': return <Power size={16} className="mr-2 text-green-600" />;
       case 'approve': return <CheckCircle size={16} className="mr-2" />;
       case 'reject': return <XCircle size={16} className="mr-2" />;
+      case 'pdf': return <FileDown size={16} className="mr-2 text-red-600" />;
+      case 'excel': return <FileSpreadsheet size={16} className="mr-2 text-green-600" />;
       default: return null;
     }
   };

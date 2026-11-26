@@ -292,6 +292,7 @@ class ExcelExportPayload(BaseModel):
     vendor_name: str | None = None
     customer_name: str | None = None
     movement_type: str = "ALL"
+    stock_level: str = "ALL"
     period: str = "DAILY"
     date_from: str | None = None
     date_to: str | None = None
@@ -337,9 +338,20 @@ async def export_report_excel_post(
         )
 
     elif r_type in {"supplier_wise", "vendor_stock"}:
-        if not items:
-            filters = InventoryReportFilter(vendor_name=payload.vendor_name, search=payload.search)
-            items = await service.repo.get_vendor_stock_report(company_id, filters, skip=0, limit=2000)
+        filters = InventoryReportFilter(vendor_name=payload.vendor_name, search=payload.search)
+        items = []
+        page_size = 1000
+        offset = 0
+        while True:
+            batch = await service.repo.get_vendor_stock_report(company_id, filters, skip=offset, limit=page_size)
+            items.extend(batch)
+            if len(batch) < page_size:
+                break
+            offset += page_size
+        if payload.stock_level == "AVAILABLE_ONLY":
+            items = [row for row in items if (row["quantity_available"] or 0) > 0]
+        elif payload.stock_level == "LOW_STOCK":
+            items = [row for row in items if (row["quantity_available"] or 0) <= 100]
         content, filename = export_exact_type_wise_stock(
             items,
             vendor_name=payload.vendor_name,
@@ -509,8 +521,12 @@ async def export_report_excel(
                 "quantity_on_hand": float(q.quantity_on_hand or 0),
                 "quantity_reserved": float(q.quantity_reserved or 0),
                 "quantity_available": float(q.quantity_available or 0),
-                "received_qty": float(movement_totals.get(q.product_id, {}).get("received_qty", 0)),
-                "dispatched_qty": float(movement_totals.get(q.product_id, {}).get("dispatched_qty", 0)),
+                "received_qty": float(movement_totals.get(
+                    (q.product_id, (q.batch_number or "").strip()), {}
+                ).get("received_qty", 0)),
+                "dispatched_qty": float(movement_totals.get(
+                    (q.product_id, (q.batch_number or "").strip()), {}
+                ).get("dispatched_qty", 0)),
             }
             for q in quants
         ]

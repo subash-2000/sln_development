@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -13,8 +13,11 @@ from app.core.exceptions import BadRequestException
 from app.core.pagination import PaginationParams, build_pagination_metadata
 from app.core.response import StandardResponse, success_response
 from app.models.user import User
+from app.models.company import Company
+from app.models.vendor import Vendor
 from app.modules.billing.schemas import (
     BillingDocumentResponse,
+    BillingTotalUpdate,
     BillingPeriodCreate,
     BillingPeriodResponse,
     CalculateBillingRequest,
@@ -23,6 +26,7 @@ from app.modules.billing.schemas import (
     MonthEndRunResponse,
 )
 from app.modules.billing.service import BillingService
+from app.modules.billing.exports import build_billing_pdf, build_billing_xlsx
 
 router = APIRouter(prefix="/billing", tags=["Billing & Rating Engine"])
 
@@ -239,8 +243,45 @@ async def get_billing_document(
     return success_response(data=result.model_dump(mode="json"))
 
 
+@router.get("/documents/{document_id}/pdf", summary="Download Billing Statement PDF")
+async def download_billing_pdf(
+    document_id: uuid.UUID,
+    context: TenantContext = Depends(get_current_tenant_context),
+    current_user: User = Depends(require_permission("billing.read")),
+    db: AsyncSession = Depends(get_db),
+):
+    if not context.company_id:
+        raise BadRequestException("Company ID is required in tenant context")
+    document = await BillingService(db).get_billing_document(document_id, context.company_id)
+    filename = f"{document.billing_number}-billing-statement.pdf"
+    company = await db.get(Company, document.company_id)
+    supplier = await db.get(Vendor, document.vendor_id) if document.vendor_id else None
+    return Response(build_billing_pdf(document, company, supplier), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/documents/{document_id}/excel", summary="Download Billing Statement Excel")
+async def download_billing_excel(
+    document_id: uuid.UUID,
+    context: TenantContext = Depends(get_current_tenant_context),
+    current_user: User = Depends(require_permission("billing.read")),
+    db: AsyncSession = Depends(get_db),
+):
+    if not context.company_id:
+        raise BadRequestException("Company ID is required in tenant context")
+    document = await BillingService(db).get_billing_document(document_id, context.company_id)
+    filename = f"{document.billing_number}-billing-statement.xlsx"
+    return Response(build_billing_xlsx(document), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 @router.post("/documents/{document_id}/manual-charges", response_model=StandardResponse[BillingDocumentResponse])
 async def add_manual_charge(document_id: uuid.UUID, payload: ManualChargeCreate, context: TenantContext = Depends(get_current_tenant_context), current_user: User = Depends(require_permission("billing.calculate")), db: AsyncSession = Depends(get_db)):
     if not context.company_id: raise BadRequestException("Company ID is required")
     result = await BillingService(db).add_manual_charge(document_id, payload, current_user.id, context.company_id)
     return success_response(data=result.model_dump(mode="json"), message="Manual charge added")
+
+
+@router.patch("/documents/{document_id}/total", response_model=StandardResponse[BillingDocumentResponse])
+async def update_billing_total(document_id: uuid.UUID, payload: BillingTotalUpdate, context: TenantContext = Depends(get_current_tenant_context), current_user: User = Depends(require_permission("billing.calculate")), db: AsyncSession = Depends(get_db)):
+    if not context.company_id: raise BadRequestException("Company ID is required")
+    result = await BillingService(db).update_total(document_id, payload.total_amount, current_user.id, context.company_id)
+    return success_response(data=result.model_dump(mode="json"), message="Draft billing total updated")

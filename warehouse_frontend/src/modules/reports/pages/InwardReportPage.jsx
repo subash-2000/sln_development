@@ -215,7 +215,7 @@ const InwardReportPage = () => {
       {/* Filters Toolbar */}
       <Card>
         <Card.Body className="p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-center">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-center">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
               <input
@@ -270,17 +270,6 @@ const InwardReportPage = () => {
               </button>
             </div>
 
-            <div>
-              <Button
-                variant="primary"
-                onClick={handleExportExcel}
-                disabled={filteredItems.length === 0}
-                className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 text-sm shadow-xs"
-              >
-                <FileSpreadsheet size={16} />
-                Export Excel
-              </Button>
-            </div>
           </div>
         </Card.Body>
       </Card>

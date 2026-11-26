@@ -50,6 +50,16 @@ class BillingLineResponse(BaseModel):
     product_name: str | None = None
     product_sku: str | None = None
     description: str | None = None
+    inward_reference: str | None = None
+    inward_number: str | None = None
+    inward_date: date | None = None
+    charge_from: date | None = None
+    charge_to: date | None = None
+    age_days: int | None = None
+    received_quantity: Decimal | None = None
+    dispatched_quantity: Decimal | None = None
+    balance_quantity: Decimal | None = None
+    quantity_days: Decimal | None = None
 
 
 class ManualChargeResponse(BaseModel):
@@ -71,6 +81,8 @@ class BillingDocumentResponse(BaseModel):
     billing_number: str
     billing_period_id: UUID
     period_name: str | None = None
+    period_start: date | None = None
+    period_end: date | None = None
     warehouse_id: UUID
     warehouse_name: str | None = None
     vendor_id: UUID | None = None
@@ -112,6 +124,10 @@ class ManualChargeCreate(BaseModel):
     quantity: Decimal = Field(Decimal("1"), gt=0)
     rate: Decimal = Field(..., ge=0)
     remarks: str | None = None
+
+
+class BillingTotalUpdate(BaseModel):
+    total_amount: Decimal = Field(..., ge=0)
 
 
 class MonthEndRunRequest(BaseModel):

@@ -45,9 +45,9 @@ def _get_val(item: Any, *keys: str, default: Any = None) -> Any:
     return default
 
 
-def _safe_date(val: Any) -> date:
+def _safe_date(val: Any, *, use_today: bool = True) -> date | None:
     if not val:
-        return datetime.now().date()
+        return datetime.now().date() if use_today else None
     if isinstance(val, datetime):
         return val.date()
     if isinstance(val, date):
@@ -56,7 +56,7 @@ def _safe_date(val: Any) -> date:
         clean = str(val).split("T")[0].strip()
         return datetime.strptime(clean, "%Y-%m-%d").date()
     except Exception:
-        return datetime.now().date()
+        return datetime.now().date() if use_today else None
 
 
 def _safe_float(val: Any, default: float = 0.0) -> float:
@@ -279,8 +279,14 @@ def export_exact_type_wise_stock(
         ws.title = sheet_name
 
     today_str = datetime.now().strftime("%d-%m-%Y")
-    vendor_title = vendor_name.upper() if vendor_name else "AASHITA ENTERPRISES"
-    ws["B2"].value = f"{vendor_title} Stock as on "
+    vendor_title = vendor_name.upper() if vendor_name else "ALL SUPPLIERS"
+    ws["B2"].value = f"{vendor_title} Stock as on {today_str}"
+    for cell, label in {"C4": "CHALLAN NUMBER", "D4": "CHALLAN DATE", "F4": "LR DATE", "H4": "RECEIVED DATE", "S4": "SUPPLIER"}.items():
+        ws[cell]._style = copy(ws["B4"]._style)
+        ws[cell].value = label
+    ws.column_dimensions["C"].width = 23
+    ws.column_dimensions["S"].width = 36
+    ws["O3"] = ws["P3"] = datetime.now().date()
 
     # Cache row 5 styles
     template_styles = {}
@@ -303,19 +309,21 @@ def export_exact_type_wise_stock(
     curr_row = 5
     for item in items:
         sku = str(_get_val(item, "product_code", "sku", "product_name") or "-")
-        dc_no = str(_get_val(item, "batch_number", "transaction_number", "reference_number") or "305")
-        rec_date = _safe_date(_get_val(item, "confirmed_at", "receipt_date", "movement_date"))
+        dc_no = _get_val(item, "challan_number", "challan_no", "supplier_document_number")
+        challan_date = _safe_date(_get_val(item, "challan_date", "supplier_document_date"), use_today=False)
+        lr_date = _safe_date(_get_val(item, "lr_date"), use_today=False)
+        rec_date = _safe_date(_get_val(item, "received_date", "receipt_date"), use_today=False)
         qty = _safe_float(_get_val(item, "quantity_on_hand", "quantity", "qty"), 0.0)
         rate = _safe_float(_get_val(item, "rate"), 10.03)
-        heat_no = _get_val(item, "batch_number") or 250101209
+        heat_no = _get_val(item, "heat_number", "batch_number")
         remarks = str(_get_val(item, "remarks") or "-")
 
         ws.cell(row=curr_row, column=2, value=sku)                                      # B: TYPES
         ws.cell(row=curr_row, column=3, value=dc_no)                                    # C: DC NO
-        ws.cell(row=curr_row, column=4, value=rec_date)                                 # D: DATE
-        ws.cell(row=curr_row, column=5, value=12850)                                    # E: L.R. NO
-        ws.cell(row=curr_row, column=6, value=rec_date)                                 # F: DATE
-        ws.cell(row=curr_row, column=7, value="SP ROADLINES")                           # G: TRANSPORTER
+        ws.cell(row=curr_row, column=4, value=challan_date)
+        ws.cell(row=curr_row, column=5, value=_get_val(item, "lr_number"))
+        ws.cell(row=curr_row, column=6, value=lr_date)
+        ws.cell(row=curr_row, column=7, value=_get_val(item, "transporter_name"))
         ws.cell(row=curr_row, column=8, value=rec_date)                                 # H: REC.DATE
         ws.cell(row=curr_row, column=9, value=1)                                        # I: Total Boxes
         ws.cell(row=curr_row, column=10, value=f"1*{int(qty)}")                         # J: Box * Qty
@@ -323,9 +331,12 @@ def export_exact_type_wise_stock(
         ws.cell(row=curr_row, column=12, value=rate)                                    # L: RATE
         ws.cell(row=curr_row, column=13, value=f"=+K{curr_row}*L{curr_row}")            # M: Basic Value
         ws.cell(row=curr_row, column=14, value=heat_no)                                 # N: Heat No
-        ws.cell(row=curr_row, column=15, value=f"=$O$3-D{curr_row}")                    # O: Age from DC
-        ws.cell(row=curr_row, column=16, value=f"=$P$3-H{curr_row}")                    # P: Age from Rec
+        if challan_date:
+            ws.cell(row=curr_row, column=15, value=f"=$O$3-D{curr_row}")
+        if rec_date:
+            ws.cell(row=curr_row, column=16, value=f"=$P$3-H{curr_row}")
         ws.cell(row=curr_row, column=18, value=remarks)                                 # R: Remarks
+        ws.cell(row=curr_row, column=19, value=_get_val(item, "vendor_name"))
 
         for col_idx in range(2, 21):
             cell = ws.cell(row=curr_row, column=col_idx)
@@ -440,6 +451,25 @@ def export_exact_stock_summary(
                 cell.alignment = copy(st["alignment"])
 
         curr_row += 1
+
+    if period.upper() == "DAILY":
+        shifted_merges = []
+        for merged in list(ws.merged_cells.ranges):
+            if merged.max_col < 9:
+                continue
+            ws.unmerge_cells(str(merged))
+            left = merged.min_col - int(merged.min_col > 9)
+            right = merged.max_col - 1
+            if left <= right and (left < right or merged.min_row < merged.max_row):
+                shifted_merges.append((merged.min_row, left, merged.max_row, right))
+        ws.delete_cols(9)
+        for first_row, first_col, last_row, last_col in shifted_merges:
+            ws.merge_cells(start_row=first_row, start_column=first_col, end_row=last_row, end_column=last_col)
+        for target, source in zip("IJKL", "JKLM"):
+            ws.column_dimensions[target].width = ws.column_dimensions[source].width
+        for row in range(6, curr_row):
+            ws[f"J{row}"] = f"=H{row}*I{row}"
+            ws[f"L{row}"] = f"=E{row}*I{row}"
 
     out = io.BytesIO()
     wb.save(out)

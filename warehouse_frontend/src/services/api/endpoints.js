@@ -145,6 +145,8 @@ export const ENDPOINTS = {
     DOCUMENTS: '/billing/documents',
     CALCULATE: '/billing/calculate',
     DOCUMENT: (id) => `/billing/documents/${id}`,
+      PDF: (id) => `/billing/documents/${id}/pdf`,
+      EXCEL: (id) => `/billing/documents/${id}/excel`,
     CONFIRM: (id) => `/billing/documents/${id}/confirm`,
     MANUAL_CHARGES: (id) => `/billing/documents/${id}/manual-charges`,
     MONTH_END_RUN: '/billing/month-end/run',

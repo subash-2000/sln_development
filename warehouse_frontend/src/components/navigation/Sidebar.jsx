@@ -64,7 +64,6 @@ const menuItems = [
     label: 'Inventory Management', 
     items: [
       { icon: Boxes, label: 'Current Stock', path: '/inventory/stock' },
-      { icon: Package, label: 'Supplier Stock', path: '/supplier-stock' },
       { icon: History, label: 'Transactions', path: '/inventory/transactions' },
       { icon: BookOpen, label: 'Ledger', path: '/inventory/ledger' },
     ]

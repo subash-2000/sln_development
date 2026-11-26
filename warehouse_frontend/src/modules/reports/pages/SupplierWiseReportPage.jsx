@@ -305,7 +305,7 @@ const SupplierWiseReportPage = () => {
                   <th className="py-3 px-4">Supplier / Vendor</th>
                   <th className="py-3 px-4">Product SKU</th>
                   <th className="py-3 px-4">Product Name</th>
-                  <th className="py-3 px-4 text-right">On Hand</th>
+                  <th className="py-3 px-4 text-right whitespace-nowrap">On Hand</th>
                   <th className="py-3 px-4 text-right">Reserved</th>
                   <th className="py-3 px-4 text-right">Available</th>
                   <th className="py-3 px-4 text-right">Action</th>

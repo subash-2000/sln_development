@@ -1,5 +1,6 @@
 import uuid
 import calendar
+import json
 from datetime import date
 from decimal import Decimal
 
@@ -118,7 +119,11 @@ class BillingService:
         period = await self.repo.get_billing_period_by_id(payload.billing_period_id, company_id)
         if not period:
             raise NotFoundException(f"Billing period with ID {payload.billing_period_id} not found")
-        if payload.customer_id:
+        if payload.vendor_id:
+            existing = await self.db.scalar(select(BillingDocument).where(BillingDocument.company_id == company_id, BillingDocument.vendor_id == payload.vendor_id, BillingDocument.billing_period_id == payload.billing_period_id, BillingDocument.status != BillingDocumentStatus.CANCELLED.value))
+            if existing:
+                raise ConflictException("A monthly bill already exists for this supplier and billing period")
+        elif payload.customer_id:
             existing = await self.db.scalar(select(BillingDocument).where(BillingDocument.company_id == company_id, BillingDocument.customer_id == payload.customer_id, BillingDocument.billing_period_id == payload.billing_period_id, BillingDocument.status != BillingDocumentStatus.CANCELLED.value))
             if existing:
                 raise ConflictException("A monthly bill already exists for this customer and billing period")
@@ -154,12 +159,39 @@ class BillingService:
             min_charge = Decimal(str(item.min_charge))
 
             if item.service_type == ServiceType.STORAGE.value:
+                if payload.vendor_id and item.calculation_basis in (
+                    CalculationBasis.PER_BAG_PER_DAY.value,
+                    CalculationBasis.PER_MT_PER_DAY.value,
+                ):
+                    aging_lots = await self.repo.get_storage_aging_lots(
+                        company_id=company_id,
+                        warehouse_id=payload.warehouse_id,
+                        vendor_id=payload.vendor_id,
+                        start_date=period.start_date,
+                        end_date=period.end_date,
+                    )
+                    for lot in aging_lots:
+                        amount = (lot["quantity_days"] * unit_rate).quantize(Decimal("0.0001"))
+                        detail = {
+                            key: str(value) if isinstance(value, (Decimal, date)) else value
+                            for key, value in lot.items()
+                            if key not in {"allocations", "remaining_quantity", "product_id", "product_name", "product_sku"}
+                        }
+                        lines.append(BillingLine(
+                            service_type=ServiceType.STORAGE.value,
+                            calculation_basis=item.calculation_basis,
+                            quantity=lot["quantity_days"],
+                            rate=unit_rate,
+                            amount=amount,
+                            product_id=lot["product_id"],
+                            description="AGING:" + json.dumps(detail),
+                            created_by_id=user_id,
+                        ))
+                    continue
                 occupancy = await self.repo.get_warehouse_stock_occupancy(
                     company_id=company_id,
                     warehouse_id=payload.warehouse_id,
                     vendor_id=payload.vendor_id,
-                    customer_id=payload.customer_id,
-                    calculation_basis=item.calculation_basis,
                 )
 
                 if item.calculation_basis in (
@@ -200,12 +232,10 @@ class BillingService:
                     start_date=period.start_date,
                     end_date=period.end_date,
                 )
+                if inward_qty <= Decimal("0"):
+                    continue
                 raw_amount = inward_qty * unit_rate
-                line_amount = (
-                    max(raw_amount, min_charge)
-                    if inward_qty > Decimal("0") or min_charge > Decimal("0")
-                    else Decimal("0.0000")
-                )
+                line_amount = max(raw_amount, min_charge)
                 lines.append(
                     BillingLine(
                         service_type=ServiceType.HANDLING_IN.value,
@@ -228,12 +258,10 @@ class BillingService:
                     start_date=period.start_date,
                     end_date=period.end_date,
                 )
+                if outward_qty <= Decimal("0"):
+                    continue
                 raw_amount = outward_qty * unit_rate
-                line_amount = (
-                    max(raw_amount, min_charge)
-                    if outward_qty > Decimal("0") or min_charge > Decimal("0")
-                    else Decimal("0.0000")
-                )
+                line_amount = max(raw_amount, min_charge)
                 lines.append(
                     BillingLine(
                         service_type=ServiceType.HANDLING_OUT.value,
@@ -263,6 +291,11 @@ class BillingService:
                         created_by_id=user_id,
                     )
                 )
+
+        if not lines:
+            raise ValidationException(
+                "No inward or product data found for the selected supplier and date range"
+            )
 
         # Compute charge totals
         storage_total = sum(
@@ -358,6 +391,8 @@ class BillingService:
             raise ValidationException(
                 f"Cannot confirm billing document in status '{doc.status}'. Must be DRAFT."
             )
+        if not any(Decimal(str(line.quantity or 0)) > 0 for line in doc.lines):
+            raise ValidationException("Cannot finalize a bill with no inward or product data")
 
         confirmed_doc = await self.repo.update_billing_document_status(
             doc, BillingDocumentStatus.CONFIRMED
@@ -418,8 +453,17 @@ class BillingService:
         created_by: str | None = None,
         updated_by: str | None = None,
     ) -> BillingDocumentResponse:
-        lines_resp = [
-            BillingLineResponse(
+        lines_resp = []
+        for line in doc.lines:
+            aging = {}
+            description = line.description
+            if description and description.startswith("AGING:"):
+                try:
+                    aging = json.loads(description[6:])
+                    description = "FIFO storage aging charge"
+                except (TypeError, ValueError):
+                    aging = {}
+            lines_resp.append(BillingLineResponse(
                 id=line.id,
                 billing_document_id=line.billing_document_id,
                 service_type=line.service_type,
@@ -430,10 +474,18 @@ class BillingService:
                 product_id=line.product_id,
                 product_name=line.product.name if line.product else None,
                 product_sku=line.product.sku if line.product else None,
-                description=line.description,
-            )
-            for line in doc.lines
-        ]
+                description=description,
+                inward_reference=aging.get("inward_reference"),
+                inward_number=aging.get("inward_number"),
+                inward_date=aging.get("inward_date"),
+                charge_from=aging.get("charge_from"),
+                charge_to=aging.get("charge_to"),
+                age_days=aging.get("age_days"),
+                received_quantity=aging.get("received_quantity"),
+                dispatched_quantity=aging.get("dispatched_quantity"),
+                balance_quantity=aging.get("balance_quantity"),
+                quantity_days=aging.get("quantity_days"),
+            ))
 
         return BillingDocumentResponse(
             id=doc.id,
@@ -441,6 +493,8 @@ class BillingService:
             billing_number=doc.billing_number,
             billing_period_id=doc.billing_period_id,
             period_name=doc.billing_period.period_name if doc.billing_period else None,
+            period_start=doc.billing_period.start_date if doc.billing_period else None,
+            period_end=doc.billing_period.end_date if doc.billing_period else None,
             warehouse_id=doc.warehouse_id,
             warehouse_name=doc.warehouse.name if doc.warehouse else None,
             vendor_id=doc.vendor_id,
@@ -478,8 +532,19 @@ class BillingService:
         await self.db.commit()
         return self._build_document_response(await self.repo.get_billing_document_by_id(doc.id, company_id))
 
+    async def update_total(self, doc_id, total_amount, user_id, company_id):
+        doc = await self.repo.get_billing_document_by_id(doc_id, company_id)
+        if not doc:
+            raise NotFoundException("Billing document not found")
+        if doc.status != BillingDocumentStatus.DRAFT.value:
+            raise ConflictException("Only draft bill totals can be edited")
+        doc.total_amount = Decimal(str(total_amount)).quantize(Decimal("0.0001"))
+        doc.updated_by_id = user_id
+        await self.db.commit()
+        return self._build_document_response(await self.repo.get_billing_document_by_id(doc.id, company_id))
+
     async def run_month_end(self, year: int, month: int, warehouse_id, user_id, company_id):
-        """Generate one draft bill per active customer rate card; safe to rerun."""
+        """Generate one draft bill per active supplier rate card; safe to rerun."""
         start = date(year, month, 1)
         end = date(year, month, calendar.monthrange(year, month)[1])
         period_name = f"{year:04d}-{month:02d}"
@@ -509,24 +574,24 @@ class BillingService:
         cards = list((await self.db.scalars(
             select(RateCard).where(
                 RateCard.company_id == company_id,
-                RateCard.customer_id.is_not(None),
+                RateCard.vendor_id.is_not(None),
                 RateCard.status == EntityStatus.ACTIVE.value,
                 RateCard.is_active.is_(True),
                 RateCard.valid_from <= end,
                 (RateCard.valid_to.is_(None) | (RateCard.valid_to >= start)),
-            ).order_by(RateCard.customer_id, RateCard.valid_from.desc())
+            ).order_by(RateCard.vendor_id, RateCard.valid_from.desc())
         )).all())
         generated = 0
         skipped = 0
         seen = set()
         for card in cards:
-            if card.customer_id in seen:
+            if card.vendor_id in seen:
                 continue
-            seen.add(card.customer_id)
+            seen.add(card.vendor_id)
             exists = await self.db.scalar(select(BillingDocument.id).where(
                 BillingDocument.company_id == company_id,
                 BillingDocument.billing_period_id == period.id,
-                BillingDocument.customer_id == card.customer_id,
+                BillingDocument.vendor_id == card.vendor_id,
                 BillingDocument.status != BillingDocumentStatus.CANCELLED.value,
             ))
             if exists:
@@ -535,7 +600,7 @@ class BillingService:
             await self.calculate_billing(CalculateBillingRequest(
                 billing_period_id=period.id,
                 warehouse_id=warehouse.id,
-                customer_id=card.customer_id,
+                vendor_id=card.vendor_id,
                 rate_card_id=card.id,
                 tax_rate_percent=Decimal("0"),
                 notes="Automated month-end draft",

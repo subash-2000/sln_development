@@ -28,6 +28,7 @@ const downloadExactExcelFromServer = async (reportType, items, filters, fallback
       vendor_name: filters.vendor_name || filters.selectedSupplier || filters.supplier || '',
       customer_name: filters.customer_name || filters.selectedCustomer || filters.customer || '',
       movement_type: filters.movement_type || 'ALL',
+      stock_level: filters.stock_level || 'ALL',
       period: filters.period || 'DAILY',
       date_from: filters.date_from || null,
       date_to: filters.date_to || null,
@@ -334,17 +335,20 @@ export const exportDailyStockReportToExcel = async (items = [], filters = {}) =>
   const filename = `Stock_Summary_${period}_${dateStr}.xlsx`;
 
   await downloadExactExcelFromServer('daily_stock', items, filters, filename, async () => {
+    const omitDifference = period === 'DAILY';
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Summary', { views: [{ showGridLines: true }] });
 
-    ws.columns = [
+    const columns = [
       { width: 4 },
       { width: 18 }, { width: 14 }, { width: 18 }, { width: 22 },
       { width: 22 }, { width: 18 }, { width: 22 }, { width: 18 },
       { width: 14 }, { width: 18 }, { width: 16 }, { width: 20 }
     ];
 
-    ws.mergeCells('B2:M2');
+    if (omitDifference) columns.splice(8, 1);
+    ws.columns = columns;
+    ws.mergeCells(omitDifference ? 'B2:L2' : 'B2:M2');
     const tCell = ws.getCell('B2');
     tCell.value = `Stock Summary Report As on (${period})`;
     tCell.font = { name: 'Bookman Old Style', size: 14, bold: true };
@@ -356,6 +360,7 @@ export const exportDailyStockReportToExcel = async (items = [], filters = {}) =>
       'Quntity Lifted by SKF', 'Balance Qty available in SLN', 'Call off difference',
       'RING Weight', "Balance Weight in KG's", 'Basic Value', "Rec Weight In KG's SLN W/h"
     ];
+    if (omitDifference) headers.splice(8, 1);
     const hRow = ws.getRow(4);
     headers.forEach((h, i) => {
       if (i >= 1) {
@@ -383,13 +388,15 @@ export const exportDailyStockReportToExcel = async (items = [], filters = {}) =>
       row.getCell(6).value = onHand;
       row.getCell(7).value = reserved;
       row.getCell(8).value = available;
-      row.getCell(9).value = { formula: `=G${currRow}-C${currRow}` };
-      row.getCell(10).value = ringWt;
-      row.getCell(11).value = { formula: `=+H${currRow}*J${currRow}` };
-      row.getCell(12).value = onHand * 10.03;
-      row.getCell(13).value = { formula: `=E${currRow}*J${currRow}` };
+      if (!omitDifference) row.getCell(9).value = { formula: `=G${currRow}-C${currRow}` };
+      const weightIndex = omitDifference ? 9 : 10;
+      const weightColumn = omitDifference ? 'I' : 'J';
+      row.getCell(weightIndex).value = ringWt;
+      row.getCell(weightIndex + 1).value = { formula: `=H${currRow}*${weightColumn}${currRow}` };
+      row.getCell(weightIndex + 2).value = onHand * 10.03;
+      row.getCell(weightIndex + 3).value = { formula: `=E${currRow}*${weightColumn}${currRow}` };
 
-      for (let c = 2; c <= 13; c++) {
+      for (let c = 2; c <= columns.length; c++) {
         row.getCell(c).font = { name: 'Bookman Old Style', size: 10 };
         row.getCell(c).border = { bottom: { style: 'thin', color: { argb: 'FFEEEEEE' } } };
       }
@@ -421,7 +428,7 @@ export const exportSupplierWiseReportToExcel = async (items = [], filters = {}) 
       { width: 18 }
     ];
 
-    const vendorTitle = filters.vendor_name ? filters.vendor_name.toUpperCase() : 'AASHITA ENTERPRISES';
+    const vendorTitle = filters.vendor_name ? filters.vendor_name.toUpperCase() : 'ALL SUPPLIERS';
     ws.mergeCells('B2:R2');
     const tCell = ws.getCell('B2');
     tCell.value = `${vendorTitle} Stock as on `;
@@ -432,9 +439,9 @@ export const exportSupplierWiseReportToExcel = async (items = [], filters = {}) 
     ws.getCell('P3').value = dateStr;
 
     const headers = [
-      '', 'TYPES', 'DC NO', 'DATE', 'L.R. NO', 'DATE', 'TRANSPORTER', 'REC.DATE',
+      '', 'TYPES', 'CHALLAN NUMBER', 'CHALLAN DATE', 'L.R. NO', 'LR DATE', 'TRANSPORTER', 'RECEIVED DATE',
       'Total Boxes', 'Box * Qty', 'QTY (in Nos)', 'RATE', 'Basic Value', 'Heat No',
-      'Age from DC', 'Age from Rec', '', 'Remarks'
+      'Age from DC', 'Age from Rec', '', 'Remarks', 'SUPPLIER'
     ];
     const hRow = ws.getRow(4);
     headers.forEach((h, i) => {
@@ -453,26 +460,28 @@ export const exportSupplierWiseReportToExcel = async (items = [], filters = {}) 
       const row = ws.getRow(currRow);
       const qty = Number(item.quantity_on_hand) || Number(item.quantity) || 0;
       const rate = Number(item.rate) || 10.03;
-      const recDate = formatDate(item.confirmed_at || item.receipt_date || dateStr);
+      const recDate = item.received_date || item.receipt_date;
+      const challanDate = item.challan_date || item.supplier_document_date;
 
       row.getCell(2).value = item.sku || item.product_code || item.product_name || '-';
-      row.getCell(3).value = item.batch_number || item.transaction_number || '305';
-      row.getCell(4).value = recDate;
-      row.getCell(5).value = 12850;
-      row.getCell(6).value = recDate;
-      row.getCell(7).value = 'SP ROADLINES';
-      row.getCell(8).value = recDate;
+      row.getCell(3).value = item.challan_number || item.challan_no || item.supplier_document_number || null;
+      row.getCell(4).value = challanDate || null;
+      row.getCell(5).value = item.lr_number || null;
+      row.getCell(6).value = item.lr_date || null;
+      row.getCell(7).value = item.transporter_name || null;
+      row.getCell(8).value = recDate || null;
       row.getCell(9).value = 1;
       row.getCell(10).value = `1*${qty}`;
       row.getCell(11).value = qty;
       row.getCell(12).value = rate;
       row.getCell(13).value = { formula: `=+K${currRow}*L${currRow}` };
-      row.getCell(14).value = item.batch_number || 250101209;
-      row.getCell(15).value = { formula: `=$O$3-D${currRow}` };
-      row.getCell(16).value = { formula: `=$P$3-H${currRow}` };
+      row.getCell(14).value = item.heat_number || item.batch_number || null;
+      if (challanDate) row.getCell(15).value = { formula: `=$O$3-D${currRow}` };
+      if (recDate) row.getCell(16).value = { formula: `=$P$3-H${currRow}` };
       row.getCell(18).value = item.remarks || '-';
+      row.getCell(19).value = item.vendor_name || null;
 
-      for (let c = 2; c <= 18; c++) {
+      for (let c = 2; c <= 19; c++) {
         row.getCell(c).font = { name: 'Bookman Old Style', size: 10 };
         row.getCell(c).border = { bottom: { style: 'thin', color: { argb: 'FFEEEEEE' } } };
       }

@@ -19,9 +19,18 @@ Push-Location $PSScriptRoot
 try {
     $env:VITE_API_BASE_URL = '/api/v1'
     $env:VITE_APP_ENV = 'production'
-    & npm.cmd --cache $npmCache --prefix warehouse_frontend ci --legacy-peer-deps
-    if ($LASTEXITCODE -ne 0) { throw 'Frontend dependency installation failed.' }
-    & npm.cmd --prefix warehouse_frontend run build
+    if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'warehouse_frontend\node_modules'))) {
+        & npm.cmd --cache $npmCache --prefix warehouse_frontend ci --legacy-peer-deps
+        if ($LASTEXITCODE -ne 0) { throw 'Frontend dependency installation failed.' }
+    }
+    $viteCmd = Join-Path $PSScriptRoot 'warehouse_frontend\node_modules\.bin\vite.cmd'
+    if (Test-Path -LiteralPath $viteCmd) {
+        & npm.cmd --prefix warehouse_frontend run build
+    }
+    else {
+        & node (Join-Path $PSScriptRoot 'warehouse_frontend\node_modules\vite\bin\vite.js') build `
+            (Join-Path $PSScriptRoot 'warehouse_frontend')
+    }
     if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' }
 
     if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
@@ -35,6 +44,7 @@ try {
         --exclude='*.pyc' `
         --exclude='.env' `
         --exclude='.env.local' `
+        --exclude='warehouse/uploads' `
         --exclude='sln.ppk' `
         --exclude='sln.pem' `
         --exclude='*.zip' `

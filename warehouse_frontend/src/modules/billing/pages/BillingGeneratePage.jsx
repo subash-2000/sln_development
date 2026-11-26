@@ -5,7 +5,7 @@ import PageHeader from '../../../components/common/PageHeader';
 import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
 import { billingApi } from '../api/billing.api';
-import { useCustomers } from '../../customers/hooks/use-customers';
+import { useVendors } from '../../vendors/hooks/use-vendors';
 import { useWarehouses } from '../../warehouses/hooks/use-warehouses';
 import apiClient from '../../../services/api/client';
 import { unwrapList } from '../../../services/api/unwrap';
@@ -23,13 +23,13 @@ export default function BillingGeneratePage() {
     period_name: `${now.toLocaleString('en', { month: 'long' })} ${now.getFullYear()}`,
     start_date: first,
     end_date: last,
-    customer_id: '',
+    vendor_id: '',
     warehouse_id: '',
     rate_card_id: '',
     tax_rate_percent: '0',
     notes: '',
   });
-  const { data: customerData, isLoading: customersLoading } = useCustomers({
+  const { data: vendorData, isLoading: vendorsLoading } = useVendors({
     page_size: 200,
     status: 'ACTIVE',
   });
@@ -38,33 +38,44 @@ export default function BillingGeneratePage() {
     status: 'ACTIVE',
   });
   const { data: rateData, isLoading: ratesLoading } = useQuery({
-    queryKey: ['customer-pricing'],
+    queryKey: ['supplier-pricing'],
     queryFn: async () =>
       unwrapList(await apiClient.get('/rate-cards', { params: { page_size: 200 } })),
   });
-  const customers = customerData?.items || [];
+  const vendors = vendorData?.items || [];
   const warehouses = warehouseData?.items || [];
   const rates = useMemo(
-    () => (rateData?.items || []).filter((rate) => rate.customer_id === form.customer_id),
-    [rateData, form.customer_id]
+    () => (rateData?.items || []).filter((rate) => rate.vendor_id === form.vendor_id),
+    [rateData, form.vendor_id]
   );
   const set = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
 
   const generate = useMutation({
     mutationFn: async () => {
       const periods = await billingApi.periods({ page_size: 100 });
-      let period = periods.items.find((item) => item.period_name === form.period_name);
-      if (!period)
+      const sameName = periods.items.find((item) => item.period_name === form.period_name);
+      let period = periods.items.find(
+        (item) =>
+          item.period_name === form.period_name &&
+          item.start_date === form.start_date &&
+          item.end_date === form.end_date
+      );
+      if (!period) {
+        const periodName = sameName
+          ? `${form.period_name} (${form.start_date} to ${form.end_date})`
+          : form.period_name;
         period = await billingApi.createPeriod({
-          period_name: form.period_name,
+          period_name: periodName,
           start_date: form.start_date,
           end_date: form.end_date,
           billing_cycle: 'MONTHLY',
         });
+      }
       return billingApi.calculate({
         billing_period_id: period.id,
         warehouse_id: form.warehouse_id,
-        customer_id: form.customer_id,
+        vendor_id: form.vendor_id,
+        customer_id: null,
         rate_card_id: form.rate_card_id,
         tax_rate_percent: Number(form.tax_rate_percent),
         notes: form.notes || null,
@@ -77,7 +88,7 @@ export default function BillingGeneratePage() {
     <div className="space-y-6">
       <PageHeader
         title="Generate Monthly Bill"
-        description="Calculate customer warehouse charges from pricing and recorded WMS activity."
+        description="Calculate supplier warehouse charges from pricing and recorded WMS activity."
         breadcrumbs={[
           { label: 'Dashboard', to: '/dashboard' },
           { label: 'Finance' },
@@ -128,23 +139,23 @@ export default function BillingGeneratePage() {
               />
             </label>
             <label className={label}>
-              Customer *
+              Supplier *
               <select
                 required
                 className={field}
-                value={form.customer_id}
+                value={form.vendor_id}
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
-                    customer_id: event.target.value,
+                    vendor_id: event.target.value,
                     rate_card_id: '',
                   }))
                 }
               >
                 <option value="">
-                  {customersLoading ? 'Loading customers…' : 'Select customer'}
+                  {vendorsLoading ? 'Loading suppliers…' : 'Select supplier'}
                 </option>
-                {customers.map((item) => (
+                {vendors.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
                   </option>
@@ -170,17 +181,17 @@ export default function BillingGeneratePage() {
               </select>
             </label>
             <label className={label}>
-              Customer Pricing *
+              Supplier Pricing *
               <select
                 required
-                disabled={!form.customer_id || ratesLoading}
+                disabled={!form.vendor_id || ratesLoading}
                 className={field}
                 value={form.rate_card_id}
                 onChange={set('rate_card_id')}
               >
                 <option value="">
-                  {!form.customer_id
-                    ? 'Select customer first'
+                  {!form.vendor_id
+                    ? 'Select supplier first'
                     : ratesLoading
                       ? 'Loading pricing…'
                       : rates.length

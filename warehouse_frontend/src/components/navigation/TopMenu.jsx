@@ -51,6 +51,7 @@ const menuItems = [
         items: [
           { icon: Users, label: 'Suppliers', path: '/suppliers' },
           { icon: UserCircle, label: 'Customers', path: '/customers' },
+          { icon: FileSpreadsheet, label: 'Supplier Pricing Master', path: '/finance/customer-pricing' },
           { icon: Store, label: 'Buyers', path: '/buyers' },
           { icon: Truck, label: 'Transport', path: '/transport' },
         ]
@@ -92,7 +93,6 @@ const menuItems = [
         label: 'Stock Views', 
         items: [
           { icon: Boxes, label: 'Current Stock', path: '/inventory/stock' },
-          { icon: Package, label: 'Supplier Stock', path: '/supplier-stock' },
         ]
       },
       { 
@@ -126,8 +126,6 @@ const menuItems = [
         label: 'BILLING & TAX', 
         items: [
           { icon: Receipt, label: 'Billing Documents', path: '/finance/billing' },
-          { icon: FileSpreadsheet, label: 'Customer Pricing Master', path: '/finance/customer-pricing' },
-          { icon: FileSpreadsheet, label: 'Invoicing & GST', path: '/finance/invoicing' },
           { icon: FileCheck2, label: 'E-Invoice & E-Way Bill', path: '/finance/einvoice' },
           { icon: FileText, label: 'GST Reports', path: '/finance/invoicing/gst-reports' },
           { icon: Receipt, label: 'Credit & Debit Notes', path: '/finance/credit-debit' },
@@ -176,7 +174,6 @@ const menuItems = [
           { icon: Building2, label: 'Supplier Reports', path: '/reports/supplier-wise' },
           { icon: BarChart3, label: 'Sales Report', path: '/rings/sales' },
           { icon: FileSpreadsheet, label: 'Invoice Reports', path: '/reports/invoices' },
-          { icon: BarChart3, label: 'All Reports Dashboard', path: '/reports' },
         ]
       }
     ]

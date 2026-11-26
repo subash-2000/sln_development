@@ -13,7 +13,6 @@ const BillingListPage = () => {
     { key: 'billing_number', label: 'Reference', sortable: true, widthClass: 'w-40' },
     { key: 'period_name', label: 'Period', widthClass: 'w-32' },
     { key: 'vendor_name', label: 'Supplier' },
-    { key: 'customer_name', label: 'Customer' },
     { key: 'total_storage_charges', label: 'Storage', type: 'currency' },
     { key: 'total_handling_charges', label: 'Handling', type: 'currency' },
     { key: 'total_amount', label: 'Total', type: 'currency' },
@@ -35,6 +34,8 @@ const BillingListPage = () => {
     <RowActions
       actions={[
         { type: 'view', label: 'View Details', onClick: () => navigate(`/finance/billing/${doc.id}`) },
+        { type: 'pdf', label: 'Download PDF', onClick: () => billingApi.downloadPdf(doc.id, doc.billing_number) },
+        { type: 'excel', label: 'Download Excel', onClick: () => billingApi.downloadExcel(doc.id, doc.billing_number) },
         { type: 'edit', label: 'Edit Document', onClick: () => navigate(`/finance/billing/${doc.id}/edit`), hidden: doc.status !== 'DRAFT' },
         { type: 'approve', label: 'Confirm Billing', onClick: () => console.log('Confirm', doc.id), hidden: doc.status !== 'DRAFT' },
         { type: 'delete', label: 'Delete', onClick: () => console.log('Delete', doc.id), variant: 'danger', hidden: doc.status !== 'DRAFT' },
@@ -45,7 +46,7 @@ const BillingListPage = () => {
   return (
     <ListPage
       title="Billing & Charges"
-      description="Manage warehouse storage and handling charges for suppliers and customers."
+      description="Manage warehouse storage and handling charges for suppliers."
       breadcrumbs={[
         { label: 'Dashboard', to: '/dashboard' }, 
         { label: 'Finance' }, 
@@ -54,7 +55,7 @@ const BillingListPage = () => {
       createTo="/finance/billing/new"
       createLabel="Create Billing"
       canCreate={true}
-      searchPlaceholder="Search by billing number, supplier or customer..."
+      searchPlaceholder="Search by billing number or supplier..."
       searchValue={list.searchInput}
       onSearchChange={list.setSearchInput}
       onRefresh={refetch}

@@ -187,19 +187,21 @@ const VehicleReportViewModal = ({ open, onClose, data }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  <tr>
+                  {(data.productLines || [data]).map((line, index) => (
+                  <tr key={index}>
                     <td className="py-2.5 font-medium text-gray-900">
-                      {data.material_summary || 'Standard Warehousing Material Batch'}
+                      {line.material_summary || '-'}
                     </td>
                     <td className="py-2.5 text-right font-mono font-bold text-gray-900">
-                      {data.dispatched_qty != null
-                        ? Number(data.dispatched_qty).toLocaleString()
-                        : '1'}
+                      {line.dispatched_qty != null
+                        ? Number(line.dispatched_qty).toLocaleString()
+                        : '-'}
                     </td>
                     <td className="py-2.5 text-right text-gray-600 font-mono">
-                      {data.uom_code || 'PCS'}
+                      {line.uom_code || 'PCS'}
                     </td>
                   </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

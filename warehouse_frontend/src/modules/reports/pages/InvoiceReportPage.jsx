@@ -290,7 +290,7 @@ const InvoiceReportPage = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-max text-left text-sm whitespace-nowrap">
               <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-500">
                 <tr>
                   <th className="py-3 px-4">Invoice No</th>

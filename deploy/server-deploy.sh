@@ -46,7 +46,14 @@ sed -Ei 's/^(host[[:space:]]+all[[:space:]]+all[[:space:]]+127\.0\.0\.1\/32[[:sp
 sed -Ei 's/^(host[[:space:]]+all[[:space:]]+all[[:space:]]+::1\/128[[:space:]]+)ident$/\1scram-sha-256/' /var/lib/pgsql/data/pg_hba.conf
 systemctl reload postgresql
 
-install -d -o "$APP_USER" -g "$APP_USER" "$APP_ROOT" "$APP_ROOT/shared"
+install -d -o "$APP_USER" -g "$APP_USER" "$APP_ROOT" "$APP_ROOT/shared" "$APP_ROOT/shared/uploads"
+
+# Uploads are runtime data, not release artifacts. Migrate files created by an
+# older release once, then mount the shared directory into every new release.
+if [[ -d "$APP_ROOT/release/warehouse/uploads" && ! -L "$APP_ROOT/release/warehouse/uploads" ]]; then
+  cp -a "$APP_ROOT/release/warehouse/uploads/." "$APP_ROOT/shared/uploads/"
+fi
+chown -R "$APP_USER:$APP_USER" "$APP_ROOT/shared/uploads"
 
 if [[ ! -f "$APP_ROOT/shared/backend.env" ]]; then
   log "Creating database and production secrets"
@@ -89,6 +96,8 @@ rm -rf "$APP_ROOT/release.new"
 install -d -o "$APP_USER" -g "$APP_USER" "$APP_ROOT/release.new"
 tar -xzf "$RELEASE_ARCHIVE" -C "$APP_ROOT/release.new"
 ln -s "$APP_ROOT/shared/backend.env" "$APP_ROOT/release.new/warehouse/.env"
+rm -rf "$APP_ROOT/release.new/warehouse/uploads"
+ln -s "$APP_ROOT/shared/uploads" "$APP_ROOT/release.new/warehouse/uploads"
 chown -R "$APP_USER:$APP_USER" "$APP_ROOT/release.new"
 
 log "Installing backend dependencies"
