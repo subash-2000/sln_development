@@ -4,12 +4,12 @@ from decimal import Decimal
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.config import settings
 from app.core.constants import RingsDocumentStatus, RingsDocumentType
 from app.core.database import get_db
 from app.core.dependencies import TenantContext, get_current_tenant_context, require_permission
@@ -37,6 +37,13 @@ class TrackingCreate(InvoiceDetails):
     invoice_amount: Decimal = Field(..., ge=0)
     tax_amount: Decimal = Field(Decimal("0"), ge=0)
     remarks: str | None = None
+
+
+class TrackingUpdate(InvoiceDetails):
+    invoice_number: str | None = Field(None, min_length=1, max_length=100)
+    invoice_date: date | None = None
+    invoice_amount: Decimal | None = Field(None, ge=0)
+    tax_amount: Decimal | None = Field(None, ge=0)
 
 class TrackingResponse(InvoiceDetails):
     id: uuid.UUID | None = None
@@ -145,8 +152,34 @@ async def list_entries(supplier_id: uuid.UUID | None = None, search: str | None 
     meta = build_pagination_metadata(int(total or 0), PaginationParams(page=page, page_size=page_size))
     return success_response(data=[serialize(dispatch, tracking).model_dump(mode="json") for dispatch, tracking in rows], pagination=meta)
 
+@router.post("/scan")
+async def scan_invoice(file: UploadFile = File(...), context: TenantContext = Depends(get_current_tenant_context), _: User = Depends(require_permission("invoice.create"))):
+    import fitz
+    from app.modules.sales_tax_tracking.invoice_scan import scan_supplier_invoice
+
+    company(context)
+    file_type = {".pdf": "pdf", ".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg"}.get(
+        Path(file.filename or "").suffix.lower()
+    )
+    if not file_type:
+        raise BadRequestException("Only PDF, PNG and JPEG invoices are supported")
+    limit = 10 * 1024 * 1024
+    try:
+        content = await file.read(limit + 1)
+        if len(content) > limit:
+            raise BadRequestException("Invoice is too large (maximum 10 MB)")
+        details = await run_in_threadpool(scan_supplier_invoice, content, file_type)
+    except (fitz.FileDataError, RuntimeError) as error:
+        raise BadRequestException("Could not read the invoice file") from error
+    except ValueError as error:
+        raise BadRequestException(str(error)) from error
+    finally:
+        await file.close()
+    return success_response(data=details, message="Invoice scanned")
+
+
 @router.patch("/{tracking_id}/details", response_model=StandardResponse[TrackingResponse])
-async def update_details(tracking_id: uuid.UUID, payload: InvoiceDetails, context: TenantContext = Depends(get_current_tenant_context), user: User = Depends(require_permission("invoice.create")), db: AsyncSession = Depends(get_db)):
+async def update_details(tracking_id: uuid.UUID, payload: TrackingUpdate, context: TenantContext = Depends(get_current_tenant_context), user: User = Depends(require_permission("invoice.create")), db: AsyncSession = Depends(get_db)):
     cid = company(context)
     row = await db.scalar(select(SalesTaxInvoiceTracking).where(
         SalesTaxInvoiceTracking.id == tracking_id,
@@ -156,31 +189,26 @@ async def update_details(tracking_id: uuid.UUID, payload: InvoiceDetails, contex
     if not row:
         raise NotFoundException("Supplier tax invoice tracking entry not found")
     dispatch = await get_dispatch(db, row.delivery_challan_id, cid)
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    for key in ("invoice_number", "invoice_date", "invoice_amount", "tax_amount"):
+        if key in updates and updates[key] is None:
+            raise ValidationException("Invoice number, date and amounts cannot be cleared")
+    if "invoice_number" in updates:
+        number = updates["invoice_number"].strip()
+        if not number:
+            raise ValidationException("Tax invoice number is required")
+        duplicate = await db.scalar(select(SalesTaxInvoiceTracking.id).where(
+            SalesTaxInvoiceTracking.company_id == cid,
+            SalesTaxInvoiceTracking.id != tracking_id,
+            func.lower(SalesTaxInvoiceTracking.invoice_number) == number.lower(),
+        ))
+        if duplicate:
+            raise ConflictException("Supplier tax invoice number already exists")
+        updates["invoice_number"] = number
+    for key, value in updates.items():
         setattr(row, key, value)
     row.updated_by_id = user.id
     await db.commit()
     return success_response(data=serialize(dispatch, row).model_dump(mode="json"))
 
 
-@router.post("/{tracking_id}/attachment", response_model=StandardResponse[TrackingResponse])
-async def upload_attachment(tracking_id: uuid.UUID, file: UploadFile = File(...), context: TenantContext = Depends(get_current_tenant_context), user: User = Depends(require_permission("invoice.create")), db: AsyncSession = Depends(get_db)):
-    cid = company(context)
-    row = await db.scalar(select(SalesTaxInvoiceTracking).where(SalesTaxInvoiceTracking.id == tracking_id, SalesTaxInvoiceTracking.company_id == cid, SalesTaxInvoiceTracking.is_active.is_(True)))
-    if not row:
-        raise NotFoundException("Supplier tax invoice tracking entry not found")
-    dispatch = await get_dispatch(db, row.delivery_challan_id, cid)
-    suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in {".pdf", ".png", ".jpg", ".jpeg"}:
-        raise BadRequestException("Only PDF, PNG and JPEG attachments are supported")
-    content = await file.read()
-    if len(content) > 10 * 1024 * 1024:
-        raise BadRequestException("Attachment is too large (maximum 10 MB)")
-    directory = Path(settings.UPLOAD_DIR).resolve() / "sales-tax-invoices" / str(cid)
-    directory.mkdir(parents=True, exist_ok=True)
-    target = directory / f"{row.id}{suffix}"
-    target.write_bytes(content)
-    row.attachment_path = str(target)
-    row.updated_by_id = user.id
-    await db.commit()
-    return success_response(data=serialize(dispatch, row).model_dump(mode="json"), message="Supplier tax invoice attachment stored")

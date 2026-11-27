@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { FileUp, X } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import { FileUp, Upload, X } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import PageHeader from '../../../components/common/PageHeader';
 import Card from '../../../components/ui/Card';
@@ -12,12 +12,13 @@ import { unwrapData, unwrapList } from '../../../services/api/unwrap';
 const field = 'w-full bg-white border border-gray-200 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none';
 const label = 'block text-sm font-medium text-gray-700 space-y-1.5';
 const emptyForm = () => ({
-  delivery_challan_id: '', invoice_number: '', invoice_date: new Date().toISOString().slice(0, 10),
-  invoice_amount: '', tax_amount: '0', remarks: '', attachment: null,
+  delivery_challan_id: '', invoice_number: '', invoice_date: '',
+  invoice_amount: '', tax_amount: '0', remarks: '',
   packing_weight: '', gross_weight: '', eway_bill_number: '', ackn_copies_status: '',
 });
 
 export default function SalesTaxTrackingPage() {
+  const invoiceInputRef = useRef(null);
   const queryClient = useQueryClient();
   const [show, setShow] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -39,35 +40,28 @@ export default function SalesTaxTrackingPage() {
       } : {}),
     });
     create.reset();
+    scan.reset();
     setShow(true);
   };
   const create = useMutation({
-    mutationFn: async ({ attachment, ...payload }) => {
+    mutationFn: async (payload) => {
       const details = {
+        invoice_number: payload.invoice_number.trim(),
+        invoice_date: payload.invoice_date,
+        invoice_amount: payload.invoice_amount,
+        tax_amount: payload.tax_amount || '0',
         packing_weight: payload.packing_weight || null,
         gross_weight: payload.gross_weight || null,
         eway_bill_number: payload.eway_bill_number.trim() || null,
         ackn_copies_status: payload.ackn_copies_status.trim() || null,
         remarks: payload.remarks.trim() || null,
       };
-      const saved = selectedDispatch.id
+      return selectedDispatch.id
         ? unwrapData(await apiClient.patch(`/sales-tax-invoices/${selectedDispatch.id}/details`, details))
         : unwrapData(await apiClient.post('/sales-tax-invoices', {
-        ...payload,
+        delivery_challan_id: payload.delivery_challan_id,
         ...details,
-        invoice_amount: Number(payload.invoice_amount),
-        tax_amount: Number(payload.tax_amount),
       }));
-      setSelectedDispatch(saved);
-      queryClient.invalidateQueries({ queryKey: ['sales-tax-tracking'] });
-      if (attachment && saved?.id) {
-        const upload = new FormData();
-        upload.append('file', attachment);
-        await apiClient.post(`/sales-tax-invoices/${saved.id}/attachment`, upload, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-      }
-      return saved;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales-tax-tracking'] });
@@ -75,6 +69,20 @@ export default function SalesTaxTrackingPage() {
       setSelectedDispatch(null);
       setForm(emptyForm());
     },
+  });
+  const scan = useMutation({
+    mutationFn: async (file) => {
+      const upload = new FormData();
+      upload.append('file', file);
+      return unwrapData(await apiClient.post('/sales-tax-invoices/scan', upload, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
+      }));
+    },
+    onSuccess: (details) => setForm((current) => {
+      const scanned = Object.fromEntries(Object.entries(details).map(([key, value]) => [key, value == null ? '' : String(value)]));
+      return { ...current, ...scanned };
+    }),
   });
   const columns = useMemo(() => [
     { key: 'dispatch_date', label: 'Dispatch Date', type: 'date' },
@@ -111,7 +119,7 @@ export default function SalesTaxTrackingPage() {
         emptyTitle="No posted dispatches found"
         emptyDescription="Posted outward dispatches will automatically appear here."
         actions={(row) => row.tracking_status === 'PENDING' ? (
-          <Button size="sm" onClick={() => openTracking(row)}>Store Invoice</Button>
+          <Button size="sm" onClick={() => openTracking(row)}>Capture Invoice</Button>
         ) : (
           <Button size="sm" variant="secondary" onClick={() => openTracking(row)}>Edit Details</Button>
         )}
@@ -121,34 +129,47 @@ export default function SalesTaxTrackingPage() {
           <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-xl">
             <Card.Header className="sticky top-0 z-10 flex items-center justify-between bg-white">
               <div>
-                <Card.Title>{selectedDispatch?.id ? 'Edit Supplier Invoice Details' : 'Store Supplier Tax Invoice'}</Card.Title>
+                <Card.Title>{selectedDispatch?.id ? 'Edit Supplier Invoice Details' : 'Capture Supplier Tax Invoice'}</Card.Title>
                 <p className="mt-1 text-sm text-gray-500">
                   {selectedDispatch?.supplier_name} · {selectedDispatch?.delivery_challan_number}
                 </p>
               </div>
-              <button type="button" aria-label="Close" onClick={() => setShow(false)}><X className="h-5 w-5 text-gray-500" /></button>
+              <button type="button" aria-label="Close" disabled={scan.isPending || create.isPending} onClick={() => setShow(false)}><X className="h-5 w-5 text-gray-500" /></button>
             </Card.Header>
             <Card.Body>
-              <form onSubmit={(event) => { event.preventDefault(); create.mutate(form); }} className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <form onSubmit={(event) => { event.preventDefault(); if (!scan.isPending && !create.isPending) create.mutate(form); }} className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className="flex justify-end md:col-span-3">
+                  <input ref={invoiceInputRef} type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" className="hidden" disabled={scan.isPending || create.isPending}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = '';
+                      if (file) scan.mutate(file);
+                    }} />
+                  <Button type="button" size="sm" variant="secondary"
+                    leftIcon={<Upload size={16} />} isLoading={scan.isPending}
+                    isDisabled={create.isPending} onClick={() => invoiceInputRef.current?.click()}>
+                    {scan.isPending ? 'Reading…' : 'Upload Invoice (PDF / Image)'}
+                  </Button>
+                </div>
+                {scan.isPending && <p role="status" className="md:col-span-3 text-sm text-gray-600">Reading invoice…</p>}
+                {scan.isSuccess && <p role="status" className="md:col-span-3 text-sm text-gray-600">Review the captured values and fill any missing fields before saving. ACKN Copies Status is manual.</p>}
+                {scan.error && <p role="alert" className="md:col-span-3 text-sm text-red-600">{scan.error.response?.data?.message || scan.error.message}</p>}
                 <label className={label}>Dispatch Number<input readOnly className={`${field} bg-gray-50`} value={selectedDispatch?.dispatch_number || ''} /></label>
                 <label className={label}>Delivery Challan<input readOnly className={`${field} bg-gray-50`} value={selectedDispatch?.delivery_challan_number || ''} /></label>
                 <label className={label}>Supplier<input readOnly className={`${field} bg-gray-50`} value={selectedDispatch?.supplier_name || ''} /></label>
-                <label className={label}>Tax Invoice Number *<input required readOnly={Boolean(selectedDispatch?.id)} className={field} value={form.invoice_number} onChange={set('invoice_number')} /></label>
-                <label className={label}>Invoice Date *<input required readOnly={Boolean(selectedDispatch?.id)} type="date" className={field} value={form.invoice_date} onChange={set('invoice_date')} /></label>
-                <label className={label}>Invoice Amount *<input required readOnly={Boolean(selectedDispatch?.id)} type="number" min="0" step="0.01" className={field} value={form.invoice_amount} onChange={set('invoice_amount')} /></label>
-                <label className={label}>Tax Amount<input readOnly={Boolean(selectedDispatch?.id)} type="number" min="0" step="0.01" className={field} value={form.tax_amount} onChange={set('tax_amount')} /></label>
+                <label className={label}>Tax Invoice Number *<input required maxLength={100} className={field} value={form.invoice_number} onChange={set('invoice_number')} /></label>
+                <label className={label}>Invoice Date *<input required type="date" className={field} value={form.invoice_date} onChange={set('invoice_date')} /></label>
+                <label className={label}>Invoice Amount *<input required type="number" min="0" step="0.01" className={field} value={form.invoice_amount} onChange={set('invoice_amount')} /></label>
+                <label className={label}>Tax Amount<input type="number" min="0" step="0.01" className={field} value={form.tax_amount} onChange={set('tax_amount')} /></label>
                 <label className={label}>Packaging Weight (kg)<input type="number" min="0" step="0.001" className={field} value={form.packing_weight} onChange={set('packing_weight')} /></label>
                 <label className={label}>Gross Weight (kg)<input type="number" min="0" step="0.001" className={field} value={form.gross_weight} onChange={set('gross_weight')} /></label>
                 <label className={label}>E-Way Bill Number<input maxLength={100} className={field} value={form.eway_bill_number} onChange={set('eway_bill_number')} /></label>
                 <label className={label}>ACKN Copies Status (Manual)<input maxLength={100} className={field} value={form.ackn_copies_status} onChange={set('ackn_copies_status')} /></label>
-                <label className={`${label} md:col-span-2`}>Supplier Invoice PDF / Image
-                  <input type="file" accept="application/pdf,image/png,image/jpeg" className={field} onChange={(event) => setForm((current) => ({ ...current, attachment: event.target.files?.[0] || null }))} />
-                </label>
                 <label className={`${label} md:col-span-3`}>Remarks<textarea className={`${field} min-h-20 resize-y`} value={form.remarks} onChange={set('remarks')} /></label>
                 {create.error && <div className="md:col-span-3 text-sm text-red-600">{create.error.response?.data?.message || create.error.message}</div>}
                 <div className="md:col-span-3 flex justify-end gap-3 border-t border-gray-100 pt-4">
-                  <Button type="button" variant="secondary" onClick={() => setShow(false)}>Cancel</Button>
-                  <Button type="submit" isLoading={create.isPending} leftIcon={<FileUp size={16} />}>Store Supplier Invoice</Button>
+                  <Button type="button" variant="secondary" isDisabled={scan.isPending || create.isPending} onClick={() => setShow(false)}>Cancel</Button>
+                  <Button type="submit" isDisabled={scan.isPending} isLoading={create.isPending} leftIcon={<FileUp size={16} />}>Save Invoice Details</Button>
                 </div>
               </form>
             </Card.Body>
