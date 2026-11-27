@@ -55,8 +55,10 @@ const ListPage = ({
   onToggleRow,
   onTogglePage,
 }) => {
+  const inlineStatus = !customToolbar && quickFilters?.length === 3 &&
+    ['All', 'Active', 'Inactive'].every((label) => quickFilters.some((option) => option.label === label));
   return (
-    <div className="flex-1 flex flex-col space-y-6">
+    <div className="flex-1 flex flex-col space-y-4">
       <PageHeader
         title={title}
         actions={
@@ -83,7 +85,20 @@ const ListPage = ({
                 supplierControl || companyControl || (showSupplierFilter ? <VendorFilter /> : null)
               }
               filterControl={
-                filterContent && (
+                <>
+                {inlineStatus && (
+                  <select
+                    aria-label="Status"
+                    className="h-9 rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 focus:ring-2 focus:ring-primary-500"
+                    value={quickFilterValue ?? quickFilters[0].value}
+                    onChange={(event) => onQuickFilterChange(quickFilters[event.target.selectedIndex].value)}
+                  >
+                    {quickFilters.map(({ value, label }) => (
+                      <option key={value} value={value}>{label === 'All' ? 'All statuses' : label}</option>
+                    ))}
+                  </select>
+                )}
+                {filterContent && (
                   <FilterPanel
                     onApply={onApplyFilters}
                     onClear={onClearFilters}
@@ -91,7 +106,8 @@ const ListPage = ({
                   >
                     {filterContent}
                   </FilterPanel>
-                )
+                )}
+                </>
               }
               columnControl={
                 columns && onToggleColumn && (
@@ -101,7 +117,7 @@ const ListPage = ({
               extraActions={toolbarExtra}
             />
           )}
-          {quickFilters && (
+          {quickFilters && !inlineStatus && (
             <div className="pt-3 border-t border-gray-100">
               <QuickFilters
                 options={quickFilters}

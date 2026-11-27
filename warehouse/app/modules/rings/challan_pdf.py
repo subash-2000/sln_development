@@ -210,6 +210,7 @@ def _signature_band(page: fitz.Page) -> None:
 def generate_sln_supplier_challan_pdf(
     document: RingsDocument,
     company: Company | None,
+    references=None,
 ) -> bytes:
     """Job Work delivery challan. GST is not charged on this SLN document."""
     pdf = fitz.open()
@@ -341,13 +342,16 @@ def generate_sln_supplier_challan_pdf(
             line.qty_per_box,
         )
         hsn = line.product.hsn_code if line.product else ""
+        challan_number, challan_date = (references or {}).get(
+            line.id, (document.supplier_document_number or "", document.supplier_document_date)
+        )
         values = [
             str(idx),
             (line.product.sku if line.product else "") or "",
             "",
             hsn or "",
-            document.supplier_document_number or "",
-            fmt_date(document.supplier_document_date),
+            challan_number,
+            fmt_date(challan_date),
             po_number,
             fmt_date(document.po_date),
             line.heat_number or "",

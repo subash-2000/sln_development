@@ -617,7 +617,9 @@ class ReportingRepository:
                 func.cast(None, String).label("sln_challan_number"),
                 func.cast(None, String).label("supplier_invoice_number"),
                 func.cast(None, String).label("po_number"),
-                func.cast(None, Numeric).label("rate")
+                func.cast(None, Numeric).label("rate"),
+                func.cast(None, Date).label("challan_date"),
+                func.nullif(Product.net_weight, 0).label("ring_weight"),
             )
             .join(DispatchOrderLine, DispatchOrder.id == DispatchOrderLine.dispatch_order_id)
             .join(Product, DispatchOrderLine.product_id == Product.id)
@@ -666,6 +668,11 @@ class ReportingRepository:
                 RingsDocument.lr_number, RingsDocument.eway_bill_number, RingsDocument.sln_challan_number,
                 RingsDocument.supplier_customer_invoice_number.label("supplier_invoice_number"),
                 RingsDocument.po_number, RingsDocumentLine.unit_rate.label("rate"),
+                RingsDocument.sln_challan_date.label("challan_date"),
+                func.coalesce(
+                    func.nullif(RingsDocumentLine.per_ring_weight, 0),
+                    func.nullif(Product.net_weight, 0),
+                ).label("ring_weight"),
             )
             .join(RingsDocumentLine, RingsDocument.id == RingsDocumentLine.document_id)
             .join(Product, RingsDocumentLine.product_id == Product.id)
@@ -899,7 +906,10 @@ class ReportingRepository:
                     DispatchOrder.dispatch_date.label("movement_date"),
                     DispatchOrder.status,
                     DispatchOrder.lr_number,
-                    DispatchOrder.eway_bill_number
+                    DispatchOrder.eway_bill_number,
+                    func.cast(None, String).label("challan_number"),
+                    func.cast(None, Numeric).label("basic_value"),
+                    func.cast(None, Numeric).label("packing_weight"),
                 )
                 .join(DispatchOrderLine, DispatchOrder.id == DispatchOrderLine.dispatch_order_id)
                 .join(Product, DispatchOrderLine.product_id == Product.id)
@@ -958,7 +968,13 @@ class ReportingRepository:
                     RingsDocument.received_date.label("movement_date"),
                     RingsDocument.status,
                     RingsDocument.lr_number,
-                    RingsDocument.eway_bill_number
+                    RingsDocument.eway_bill_number,
+                    func.coalesce(
+                        func.nullif(RingsDocumentLine.source_document_number, ""),
+                        RingsDocument.supplier_document_number,
+                    ).label("challan_number"),
+                    RingsDocumentLine.basic_value,
+                    RingsDocumentLine.packing_weight,
                 )
                 .join(RingsDocumentLine, RingsDocument.id == RingsDocumentLine.document_id)
                 .join(Product, RingsDocumentLine.product_id == Product.id)

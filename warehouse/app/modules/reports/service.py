@@ -4,7 +4,7 @@ from typing import List, Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.pagination import PaginationParams
+from app.core.pagination import PaginationParamsfrom app.modules.inventory.repository import InventoryRepository
 from app.modules.reports.repository import ReportingRepository
 from app.modules.reports.schemas import (
     VehicleMovementRow,
@@ -43,9 +43,9 @@ class ReportingService:
         total = await self.repo.count_current_stock_report(company_id, filters)        movement_totals = await self.repo.get_rings_stock_movement_totals(company_id)
 
         rows = []
-        for q in quants:
+        challans = await InventoryRepository(self.db).get_quant_challan_numbers([q.id for q in quants])        for q in quants:
             rows.append(CurrentStockRow(
-                product_code=q.product.sku,
+                product_code=q.product.sku,                challan_number=challans.get(q.id),                ring_weight=q.product.net_weight or None,
                 product_name=q.product.name,
                 category_name=q.product.category.name if q.product.category else None,
                 uom_code=q.product.uom.code,
@@ -206,7 +206,7 @@ class ReportingService:
                 product_code=item["product_code"],
                 product_name=item["product_name"],
                 uom_code=item["uom_code"],
-                dispatched_qty=item["dispatched_qty"],
+                dispatched_qty=item["dispatched_qty"],                challan_date=item.get("challan_date"),                ring_weight=item.get("ring_weight"),
                 status=item["status"],
                 transporter_name=item["transporter_name"],
                 vehicle_number=item["vehicle_number"],                driver_name=item.get("driver_name"),                driver_phone=item.get("driver_phone"),                lr_number=item.get("lr_number"),                eway_bill_number=item.get("eway_bill_number"),                sln_challan_number=item.get("sln_challan_number"),                supplier_invoice_number=item.get("supplier_invoice_number"),                po_number=item.get("po_number"),                rate=item.get("rate") or 0,
@@ -278,7 +278,7 @@ class ReportingService:
                 driver_name=item["driver_name"],
                 driver_phone=item["driver_phone"],
                 movement_type=item["movement_type"],
-                reference_number=item["reference_number"],
+                reference_number=item["reference_number"],                challan_number=item.get("challan_number"),                basic_value=item.get("basic_value"),                packing_weight=item.get("packing_weight"),
                 destination=item["destination"],
                 party_name=item.get("party_name"),
                 vendor_name=item.get("vendor_name"),

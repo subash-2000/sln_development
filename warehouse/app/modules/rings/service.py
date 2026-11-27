@@ -1248,6 +1248,8 @@ class RingsService:
                 basic_value=line.basic_value,
                 per_ring_weight=line.per_ring_weight,
                 packing_detail=line.packing_detail,
+                source_document_number=line.source_document_number,
+                source_document_date=line.source_document_date,
                 remarks=line.remarks,
             )
             for line in pick.lines
@@ -1376,6 +1378,7 @@ class RingsService:
         from app.models.sales_tax_tracking import SalesTaxInvoiceTracking
         tracking_rows = list((await self.db.scalars(select(SalesTaxInvoiceTracking).where(SalesTaxInvoiceTracking.company_id == company_id, SalesTaxInvoiceTracking.is_active.is_(True)))).all())
         tracking_by_challan = {row.delivery_challan_id: row for row in tracking_rows}
+        supplier_references = await self._supplier_challan_references(rows, company_id)
         result: list[RingsSalesRow] = []
         for doc in rows:
             if customer_id and doc.customer_id != customer_id:
@@ -1397,8 +1400,8 @@ class RingsService:
                         customer_name=doc.customer.name if doc.customer else None,
                         product_sku=line.product.sku if line.product else None,
                         heat_number=line.heat_number,
-                        supplier_document_number=doc.supplier_document_number,
-                        challan_date=doc.supplier_document_date,
+                        supplier_document_number=supplier_references[line.id][0],
+                        challan_date=supplier_references[line.id][1],
                         transporter_name=doc.transporter_name,
                         sln_challan_number=doc.sln_challan_number,
                         supplier_customer_invoice_number=doc.supplier_customer_invoice_number,
@@ -1421,9 +1424,58 @@ class RingsService:
                         sales_tax_invoice_amount=tracking.invoice_amount if tracking else None,
                         sales_tax_tracking_status="RECEIVED" if tracking else "PENDING",
                         sales_tax_invoice_remarks=tracking.remarks if tracking else None,
+                        sales_tax_packing_weight=tracking.packing_weight if tracking else None,
+                        sales_tax_gross_weight=tracking.gross_weight if tracking else None,
+                        sales_tax_eway_bill_number=tracking.eway_bill_number if tracking else None,
+                        sales_tax_ackn_copies_status=tracking.ackn_copies_status if tracking else None,
                     )
                 )
         return result
+
+    async def _supplier_challan_references(self, documents, company_id):
+        parent_ids = {doc.parent_document_id for doc in documents if doc.parent_document_id}
+        parents = {}
+        if parent_ids:
+            result = await self.db.scalars(select(RingsDocument).where(
+                RingsDocument.company_id == company_id,
+                RingsDocument.id.in_(parent_ids),
+                RingsDocument.document_type == RingsDocumentType.PICK.value,
+            ))
+            parents = {doc.id: doc for doc in result.all()}
+
+        def clean(number, heat):
+            number = (number or "").strip()
+            if number.upper().startswith(("SEED-", "OPEN-")) or number.casefold() == (heat or "").strip().casefold():
+                return ""
+            return number
+
+        references = {}
+        for doc in documents:
+            parent = parents.get(doc.parent_document_id)
+            for line in doc.lines:
+                number = clean(line.source_document_number, line.heat_number)
+                source_date = line.source_document_date if number else None
+                if not number and parent:
+                    candidates = {
+                        (candidate_number, candidate.source_document_date)
+                        for candidate in parent.lines
+                        if candidate.product_id == line.product_id
+                        and candidate.heat_number == line.heat_number
+                        and candidate.location_id == line.location_id
+                        and (candidate_number := clean(candidate.source_document_number, candidate.heat_number))
+                    }
+                    if len(candidates) == 1:
+                        number, source_date = candidates.pop()
+                    elif candidates:
+                        references[line.id] = ("", None)
+                        continue
+                header_number = clean(doc.supplier_document_number, line.heat_number)
+                if not number:
+                    number = header_number
+                if not source_date and number and number == header_number:
+                    source_date = doc.supplier_document_date
+                references[line.id] = (number, source_date)
+        return references
 
     async def _load_company(self, company_id: uuid.UUID) -> Company | None:
         return (await self.db.execute(select(Company).where(Company.id == company_id))).scalar_one_or_none()
@@ -1449,7 +1501,7 @@ class RingsService:
         if doc.document_type == RingsDocumentType.PICK.value and doc.status != RingsDocumentStatus.POSTED.value:
             raise ValidationException("Dispatch the pick slip first to generate the SLN delivery challan")
         company = await self._load_company(company_id)
-        pdf = generate_sln_supplier_challan_pdf(doc, company)
+        pdf = generate_sln_supplier_challan_pdf(doc, company, await self._supplier_challan_references([doc], company_id))
         number = (doc.sln_challan_number or doc.document_number).replace("/", "-")
         buyer = (doc.customer.name if doc.customer else "buyer").replace(" ", "-")[:40]
         return pdf, f"sln-to-supplier-challan-{buyer}-{number}.pdf"
@@ -1496,7 +1548,7 @@ class RingsService:
         if doc.document_type == RingsDocumentType.PICK.value and doc.status != RingsDocumentStatus.POSTED.value:
             raise ValidationException("Dispatch the pick slip first to generate the SLN delivery challan")
         company = await self._load_company(company_id)
-        xlsx = generate_sln_challan_xlsx(doc, company)
+        xlsx = generate_sln_challan_xlsx(doc, company, await self._supplier_challan_references([doc], company_id))
         number = (doc.sln_challan_number or doc.document_number).replace("/", "-")
         return xlsx, f"sln-to-supplier-challan-{number}.xlsx"
 
@@ -1521,7 +1573,8 @@ class RingsService:
         if not docs:
             raise ValidationException("No Job Work SLN delivery challans found")
         company = await self._load_company(company_id)
-        return generate_sln_challan_register_xlsx(docs, company), "sln-to-supplier-challans.xlsx"
+        references = await self._supplier_challan_references(docs, company_id)
+        return generate_sln_challan_register_xlsx(docs, company, references), "sln-to-supplier-challans.xlsx"
 
     async def build_pick_register_excel(
         self, company_id: uuid.UUID, vendor_id=None
@@ -1629,8 +1682,9 @@ class RingsService:
             return empty.tobytes(), "sln-to-supplier-challans-empty.pdf"
         company = await self._load_company(company_id)
         merged = fitz.open()
+        references = await self._supplier_challan_references(docs, company_id)
         for item in docs:
-            part = fitz.open(stream=generate_sln_supplier_challan_pdf(item, company), filetype="pdf")
+            part = fitz.open(stream=generate_sln_supplier_challan_pdf(item, company, references), filetype="pdf")
             merged.insert_pdf(part)
             part.close()
         buyer = "all-buyers"

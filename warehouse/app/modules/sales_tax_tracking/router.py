@@ -22,7 +22,15 @@ from app.models.user import User
 
 router = APIRouter(prefix="/sales-tax-invoices", tags=["Supplier Tax Invoice Tracking"])
 
-class TrackingCreate(BaseModel):
+class InvoiceDetails(BaseModel):
+    packing_weight: Decimal | None = Field(None, ge=0, max_digits=14, decimal_places=3)
+    gross_weight: Decimal | None = Field(None, ge=0, max_digits=14, decimal_places=3)
+    eway_bill_number: str | None = Field(None, max_length=100)
+    ackn_copies_status: str | None = Field(None, max_length=100)
+    remarks: str | None = None
+
+
+class TrackingCreate(InvoiceDetails):
     delivery_challan_id: uuid.UUID
     invoice_number: str = Field(..., min_length=1, max_length=100)
     invoice_date: date
@@ -30,7 +38,7 @@ class TrackingCreate(BaseModel):
     tax_amount: Decimal = Field(Decimal("0"), ge=0)
     remarks: str | None = None
 
-class TrackingResponse(BaseModel):
+class TrackingResponse(InvoiceDetails):
     id: uuid.UUID | None = None
     delivery_challan_id: uuid.UUID
     delivery_challan_number: str
@@ -72,6 +80,10 @@ def serialize(dispatch: RingsDocument, tracking: SalesTaxInvoiceTracking | None)
         invoice_amount=tracking.invoice_amount if tracking else None,
         tax_amount=tracking.tax_amount if tracking else None,
         remarks=tracking.remarks if tracking else None,
+        packing_weight=tracking.packing_weight if tracking else None,
+        gross_weight=tracking.gross_weight if tracking else None,
+        eway_bill_number=tracking.eway_bill_number if tracking else None,
+        ackn_copies_status=tracking.ackn_copies_status if tracking else None,
         attachment_path=tracking.attachment_path if tracking else None,
         tracking_status="RECEIVED" if tracking else "PENDING",
     )
@@ -102,6 +114,10 @@ async def create(payload: TrackingCreate, context: TenantContext = Depends(get_c
         delivery_challan_id=dispatch.id, invoice_number=payload.invoice_number.strip(),
         invoice_date=payload.invoice_date, invoice_amount=payload.invoice_amount,
         tax_amount=payload.tax_amount, remarks=payload.remarks,
+        packing_weight=payload.packing_weight,
+        gross_weight=payload.gross_weight,
+        eway_bill_number=payload.eway_bill_number,
+        ackn_copies_status=payload.ackn_copies_status,
         created_by_id=user.id, updated_by_id=user.id,
     )
     db.add(row)
@@ -128,6 +144,24 @@ async def list_entries(supplier_id: uuid.UUID | None = None, search: str | None 
     rows = (await db.execute(stmt)).all()
     meta = build_pagination_metadata(int(total or 0), PaginationParams(page=page, page_size=page_size))
     return success_response(data=[serialize(dispatch, tracking).model_dump(mode="json") for dispatch, tracking in rows], pagination=meta)
+
+@router.patch("/{tracking_id}/details", response_model=StandardResponse[TrackingResponse])
+async def update_details(tracking_id: uuid.UUID, payload: InvoiceDetails, context: TenantContext = Depends(get_current_tenant_context), user: User = Depends(require_permission("invoice.create")), db: AsyncSession = Depends(get_db)):
+    cid = company(context)
+    row = await db.scalar(select(SalesTaxInvoiceTracking).where(
+        SalesTaxInvoiceTracking.id == tracking_id,
+        SalesTaxInvoiceTracking.company_id == cid,
+        SalesTaxInvoiceTracking.is_active.is_(True),
+    ))
+    if not row:
+        raise NotFoundException("Supplier tax invoice tracking entry not found")
+    dispatch = await get_dispatch(db, row.delivery_challan_id, cid)
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(row, key, value)
+    row.updated_by_id = user.id
+    await db.commit()
+    return success_response(data=serialize(dispatch, row).model_dump(mode="json"))
+
 
 @router.post("/{tracking_id}/attachment", response_model=StandardResponse[TrackingResponse])
 async def upload_attachment(tracking_id: uuid.UUID, file: UploadFile = File(...), context: TenantContext = Depends(get_current_tenant_context), user: User = Depends(require_permission("invoice.create")), db: AsyncSession = Depends(get_db)):

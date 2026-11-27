@@ -194,6 +194,7 @@ class StockQuantResponse(BaseModel):
     product_id: uuid.UUID
     vendor_id: uuid.UUID | None = None
     batch_number: str | None = None
+    challan_number: str | None = None
     quantity_on_hand: Decimal
     quantity_reserved: Decimal
     quantity_available: Decimal

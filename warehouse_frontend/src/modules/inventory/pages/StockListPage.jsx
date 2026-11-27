@@ -15,7 +15,7 @@ const StockListPage = () => {
   const initialColumns = [
     { key: 'product_name', label: 'Product', sortable: true },
     { key: 'sku', label: 'SKU', widthClass: 'w-32' },
-    { key: 'batch_number', label: 'Challan No', widthClass: 'w-28' },
+    { key: 'challan_number', label: 'Challan Number', widthClass: 'w-28' },
     { key: 'vendor_name', label: 'Supplier' },
     { key: 'warehouse_name', label: 'Warehouse' },
     { key: 'location_name', label: 'Location' },

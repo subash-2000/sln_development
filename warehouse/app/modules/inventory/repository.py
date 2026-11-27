@@ -195,6 +195,56 @@ class InventoryRepository:
         result = await self.db.execute(stmt)
         return list(result.scalars().all()), total
 
+    async def get_quant_challan_numbers(self, quant_ids: list[uuid.UUID]) -> dict:
+        from app.models.rings import RingsDocument, RingsDocumentLine
+
+        if not quant_ids:
+            return {}
+
+        line_batch = func.coalesce(
+            func.nullif(func.trim(RingsDocumentLine.heat_number), ""),
+            func.concat(
+                "OPEN-", func.replace(RingsDocument.document_number, "/", "-"), "-",
+                func.substr(RingsDocumentLine.id.cast(StockQuant.batch_number.type), 1, 8),
+            ),
+        )
+        challan = func.coalesce(
+            func.nullif(func.trim(RingsDocumentLine.source_document_number), ""),
+            func.nullif(func.trim(RingsDocument.supplier_document_number), ""),
+        )
+        statement = (
+            select(StockQuant.id, challan)
+            .join(StockMove, and_(
+                StockMove.company_id == StockQuant.company_id,
+                StockMove.product_id == StockQuant.product_id,
+                StockMove.destination_location_id == StockQuant.location_id,
+                StockMove.vendor_id.is_not_distinct_from(StockQuant.vendor_id),
+                StockMove.batch_number == StockQuant.batch_number,
+            ))
+            .join(RingsDocument, and_(
+                RingsDocument.stock_transaction_id == StockMove.transaction_id,
+                RingsDocument.company_id == StockQuant.company_id,
+                RingsDocument.warehouse_id == StockQuant.warehouse_id,
+            ))
+            .join(RingsDocumentLine, and_(
+                RingsDocumentLine.document_id == RingsDocument.id,
+                RingsDocumentLine.product_id == StockQuant.product_id,
+                RingsDocumentLine.location_id == StockQuant.location_id,
+                line_batch == StockQuant.batch_number,
+            ))
+            .where(
+                StockQuant.id.in_(quant_ids),
+                RingsDocument.document_type == "INWARD",
+                RingsDocument.status == "POSTED",
+                challan.is_not(None),
+            )
+            .distinct()
+        )
+        by_quant = {}
+        for quant_id, number in (await self.db.execute(statement)).all():
+            by_quant.setdefault(quant_id, set()).add(number)
+        return {quant_id: ", ".join(sorted(numbers)) for quant_id, numbers in by_quant.items()}
+
     async def list_ledger(
         self,
         company_id: uuid.UUID,

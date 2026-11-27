@@ -250,85 +250,46 @@ export const exportInwardReportToExcel = async (items = [], filters = {}) => {
 export const exportVehicleReportToExcel = async (items = [], filters = {}) => {
   const dateStr = new Date().toISOString().split('T')[0];
   const movType = (filters.movement_type || 'ALL').toUpperCase();
-  const sheetTitle = movType === 'OUTWARD' ? 'Vehicle Outward Movements' : 'Vehicle Inward Movements';
   const filename = `Vehicle_Movement_Report_${movType}_${dateStr}.xlsx`;
-
-  await downloadExactExcelFromServer('vehicle', items, filters, filename, async () => {
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet(sheetTitle, { views: [{ showGridLines: true }] });
-
-    ws.columns = [
-      { width: 4 },
-      { width: 18 }, { width: 16 }, { width: 14 }, { width: 14 },
-      { width: 14 }, { width: 22 }, { width: 16 }, { width: 12 },
-      { width: 20 }, { width: 14 }, { width: 12 }, { width: 16 },
-      { width: 16 }, { width: 14 }, { width: 12 }, { width: 16 },
-      { width: 14 }, { width: 14 }, { width: 14 }
-    ];
-
-    ws.mergeCells('B2:T2');
-    const tCell = ws.getCell('B2');
-    tCell.value = `${sheetTitle.toUpperCase()} AS ON ${dateStr}`;
-    tCell.font = { name: 'Bookman Old Style', size: 14, bold: true };
-    tCell.alignment = { horizontal: 'center' };
-
-    ws.mergeCells('B3:M3');
-    const inBanner = ws.getCell('B3');
-    inBanner.value = movType;
-    inBanner.font = { name: 'Bookman Old Style', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
-    inBanner.alignment = { horizontal: 'center' };
-    inBanner.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00B0F0' } };
-
-    const headers = [
-      '', 'TYPES', 'DC NO', 'DATE', 'L.R. NO', 'DATE', 'TRANSPORTER', 'REC.DATE',
-      'Total Boxes', 'Box * Qty', 'QTY (in Nos)', 'RATE', 'BASIC VALUE',
-      'VEHICLE NO', 'DRIVER', 'STATUS'
-    ];
-    const hRow = ws.getRow(4);
-    headers.forEach((h, i) => {
-      if (i >= 1) {
-        const c = hRow.getCell(i + 1);
-        c.value = h;
-        c.font = { name: 'Bookman Old Style', size: 10, bold: true };
-        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
-        c.border = { top: { style: 'thin' }, bottom: { style: 'thin' } };
-      }
-    });
-
-    let currRow = 5;
-    items.forEach((item) => {
-      const row = ws.getRow(currRow);
-      const qty = Number(item.dispatched_qty) || Number(item.quantity) || 0;
-      row.getCell(2).value = item.material_summary || item.product_name || '-';
-      row.getCell(3).value = item.reference_number || '-';
-      row.getCell(4).value = formatDate(item.movement_date);
-      row.getCell(5).value = item.lr_number || '-';
-      row.getCell(6).value = formatDate(item.movement_date);
-      row.getCell(7).value = item.party_name || item.destination || '-';
-      row.getCell(8).value = formatDate(item.movement_date);
-      row.getCell(9).value = 1;
-      row.getCell(10).value = `1*${qty}`;
-      row.getCell(11).value = qty;
-      row.getCell(12).value = 10.03;
-      row.getCell(13).value = { formula: `=+K${currRow}*L${currRow}` };
-      row.getCell(14).value = item.vehicle_number || '-';
-      row.getCell(15).value = item.driver_name || '-';
-      row.getCell(16).value = item.status || 'COMPLETED';
-
-      for (let c = 2; c <= 16; c++) {
-        row.getCell(c).font = { name: 'Bookman Old Style', size: 10 };
-        row.getCell(c).border = { bottom: { style: 'thin', color: { argb: 'FFEEEEEE' } } };
-      }
-      currRow++;
-    });
-
-    await saveExcelJSWorkbook(wb, filename);
-  });
+  const exported = await downloadExactExcelFromServer('vehicle', items, filters, filename);
+  if (!exported) window.alert('Could not download the vehicle report. Please try again.');
 };
 
 // ---------------------------------------------------------------------------
 // 3. DAILY STOCK REPORT EXCEL EXPORT (Sheet: "Summary")
 // ---------------------------------------------------------------------------
+export const exportDailyStockDetailsToExcel = async (items) => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Stock Details', { views: [{ state: 'frozen', ySplit: 1 }] });
+  sheet.columns = [
+    ['Product SKU', 'product_code', 30], ['Product Name', 'product_name', 44],
+    ['Category', 'category_name', 20], ['Supplier', 'vendor_name', 32],
+    ['Warehouse', 'warehouse_name', 26], ['Bin', 'location_code', 18],
+    ['Batch / Lot', 'batch_number', 36], ['Challan Number', 'challan_number', 27],
+    ['UOM', 'uom_code', 10], ['On Hand', 'quantity_on_hand', 16],
+    ['Received Qty', 'received_qty', 16], ['Outward Qty', 'dispatched_qty', 16],
+    ['Reserved Qty', 'quantity_reserved', 16], ['Available Qty', 'quantity_available', 16],
+    ['Ring Weight (kg)', 'ring_weight', 20],
+  ].map(([header, key, width]) => ({ header, key, width }));
+
+  sheet.getRow(1).eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
+  });
+  sheet.autoFilter = 'A1:O1';
+  const numericKeys = ['quantity_on_hand', 'received_qty', 'dispatched_qty', 'quantity_reserved', 'quantity_available', 'ring_weight'];
+  for (const item of items) {
+    const row = { ...item };
+    for (const key of numericKeys) {
+      row[key] = item[key] == null || item[key] === '' ? null : Number(item[key]);
+    }
+    sheet.addRow(row);
+  }
+  for (const key of numericKeys) sheet.getColumn(key).numFmt = '#,##0.######';
+  const reportDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Kolkata' }).format(new Date());
+  await saveExcelJSWorkbook(workbook, `Stock_Details_${reportDate}.xlsx`);
+};
+
 export const exportDailyStockReportToExcel = async (items = [], filters = {}) => {
   const dateStr = new Date().toISOString().split('T')[0];
   const period = (filters.period || 'DAILY').toUpperCase();
@@ -379,7 +340,7 @@ export const exportDailyStockReportToExcel = async (items = [], filters = {}) =>
       const onHand = Number(item.quantity_on_hand) || Number(item.on_hand) || 0;
       const reserved = Number(item.quantity_reserved) || Number(item.reserved) || 0;
       const available = Number(item.quantity_available) || onHand;
-      const ringWt = 0.034;
+      const ringWt = Number(item.ring_weight);
 
       row.getCell(2).value = item.sku || item.product_code || item.product_name || '-';
       row.getCell(3).value = 0;
@@ -391,10 +352,12 @@ export const exportDailyStockReportToExcel = async (items = [], filters = {}) =>
       if (!omitDifference) row.getCell(9).value = { formula: `=G${currRow}-C${currRow}` };
       const weightIndex = omitDifference ? 9 : 10;
       const weightColumn = omitDifference ? 'I' : 'J';
-      row.getCell(weightIndex).value = ringWt;
-      row.getCell(weightIndex + 1).value = { formula: `=H${currRow}*${weightColumn}${currRow}` };
+      if (Number.isFinite(ringWt) && ringWt > 0) {
+        row.getCell(weightIndex).value = ringWt;
+        row.getCell(weightIndex + 1).value = { formula: `H${currRow}*${weightColumn}${currRow}` };
+        row.getCell(weightIndex + 3).value = { formula: `E${currRow}*${weightColumn}${currRow}` };
+      }
       row.getCell(weightIndex + 2).value = onHand * 10.03;
-      row.getCell(weightIndex + 3).value = { formula: `=E${currRow}*${weightColumn}${currRow}` };
 
       for (let c = 2; c <= columns.length; c++) {
         row.getCell(c).font = { name: 'Bookman Old Style', size: 10 };
@@ -536,7 +499,7 @@ export const exportOutwardReportToExcel = async (items = [], filters = {}) => {
     tCell.alignment = { horizontal: 'center' };
 
     const headers = [
-      '', 'TYPES', 'FACTROY DC NO', 'DC DATE', 'Received Mode', 'Customer',
+      '', 'TYPES', 'CHALLAN NUMBER', 'CHALLAN DATE', 'Received Mode', 'Customer',
       'W/H INV No', 'Inv Date', 'GSP 1 COLLER Set', 'GSP 2 COLLER Set', 'QTY',
       'Rate', 'Basic Value', 'IGST @ 18%', 'Inv Value', 'Dispatch Date',
       'PO NO', 'RING WT', 'GSP 1 Set Wt', 'GSP 2 Set Wt', 'TOTAL RINGS & GSP WT'
@@ -561,8 +524,8 @@ export const exportOutwardReportToExcel = async (items = [], filters = {}) => {
       const dDate = formatDate(item.dispatch_date || dateStr);
 
       row.getCell(2).value = item.product_code || item.sku || item.product_name || '-';
-      row.getCell(3).value = item.dispatch_number || 556;
-      row.getCell(4).value = dDate;
+      row.getCell(3).value = item.sln_challan_number || item.challan_number || null;
+      row.getCell(4).value = item.challan_date ? formatDate(item.challan_date) : null;
       row.getCell(5).value = 'SP ROADLINES';
       row.getCell(6).value = item.customer_name || 'SKF INDIA LTD.';
       row.getCell(7).value = item.dispatch_number || '-';
@@ -576,10 +539,13 @@ export const exportOutwardReportToExcel = async (items = [], filters = {}) => {
       row.getCell(15).value = { formula: `=+N${currRow}+M${currRow}` };
       row.getCell(16).value = dDate;
       row.getCell(17).value = item.po_number || 'P247245';
-      row.getCell(18).value = 0.024;
+      const ringWeight = item.ring_weight == null || item.ring_weight === '' ? null : Number(item.ring_weight);
+      row.getCell(18).value = ringWeight;
       row.getCell(19).value = 0;
       row.getCell(20).value = 24;
-      row.getCell(21).value = { formula: `=+K${currRow}*R${currRow}+I${currRow}*S${currRow}+J${currRow}*T${currRow}` };
+      if (ringWeight !== null) {
+        row.getCell(21).value = { formula: `=+K${currRow}*R${currRow}+I${currRow}*S${currRow}+J${currRow}*T${currRow}` };
+      }
 
       for (let c = 2; c <= 21; c++) {
         row.getCell(c).font = { name: 'Arial', size: 9 };

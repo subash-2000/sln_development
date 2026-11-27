@@ -140,7 +140,6 @@ const InwardReportPage = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Inward Stock Reports"
         description="Comprehensive audit of goods receipts (GRNs), supplier deliveries, and stock increments"
         breadcrumbs={[
           { label: 'Dashboard', to: '/dashboard' },
@@ -300,13 +299,14 @@ const InwardReportPage = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-max text-left text-xs whitespace-nowrap">
               <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-500">
                 <tr>
-                  <th className="py-3 px-4">Transaction / GRN</th>
+                  <th className="py-3 px-4">Inward Number</th>
+                  <th className="py-3 px-4">GRN Number</th>
+                  <th className="py-3 px-4">Challan Number</th>
                   <th className="py-3 px-4">Receipt Date</th>
                   <th className="py-3 px-4">Supplier / Vendor</th>
-                  <th className="py-3 px-4">Product SKU</th>
                   <th className="py-3 px-4">Product Name</th>
                   <th className="py-3 px-4 text-right">Received Qty</th>
                   <th className="py-3 px-4 text-center">Status</th>
@@ -320,34 +320,27 @@ const InwardReportPage = () => {
                     onClick={() => setViewItem(item)}
                     className="hover:bg-emerald-50/40 cursor-pointer transition-colors"
                   >
-                    <td className="py-3.5 px-4 font-mono font-bold text-gray-900">
-                      <div>{item.inward_number || item.transaction_number}</div>
-                      {item.inward_number && item.transaction_number && (
-                        <div className="text-[10px] font-normal text-gray-400 mt-0.5">
-                          GRN: {item.transaction_number}
-                        </div>
-                      )}
-                      {item.challan_number && (
-                        <div className="text-[10px] font-normal text-blue-500 mt-0.5">
-                          DC: {item.challan_number}
-                        </div>
-                      )}
+                    <td className="py-3.5 px-4 font-semibold tabular-nums text-gray-900">
+                      {item.inward_number || '—'}
                     </td>
-                    <td className="py-3.5 px-4 text-gray-600 font-mono text-xs">
+                    <td className="py-3.5 px-4 tabular-nums text-gray-600">
+                      {item.transaction_number || '—'}
+                    </td>
+                    <td className="py-3.5 px-4 tabular-nums text-blue-600">
+                      {item.challan_number || '—'}
+                    </td>
+                    <td className="py-3.5 px-4 tabular-nums text-gray-600">
                       {item.confirmed_at || '-'}
                     </td>
                     <td className="py-3.5 px-4 font-medium text-gray-800">
                       {item.vendor_name || 'General Supplier'}
                     </td>
-                    <td className="py-3.5 px-4 font-mono text-xs text-blue-600">
-                      {item.product_code}
-                    </td>
                     <td className="py-3.5 px-4 text-gray-800">
                       {item.product_name}
                     </td>
-                    <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-700">
+                    <td className="py-3.5 px-4 text-right tabular-nums font-bold text-emerald-700">
                       {Number(item.quantity).toLocaleString()}
-                      <span className="text-xs text-gray-400 font-normal ml-1">
+                      <span className="text-gray-500 font-normal ml-1">
                         {item.uom_code || 'PCS'}
                       </span>
                     </td>

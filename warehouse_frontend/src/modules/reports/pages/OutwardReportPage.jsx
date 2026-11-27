@@ -206,7 +206,7 @@ const OutwardReportPage = () => {
       {/* Filters Toolbar */}
       <Card>
         <Card.Body className="p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-center">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-center">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
               <input
@@ -261,17 +261,6 @@ const OutwardReportPage = () => {
               </button>
             </div>
 
-            <div>
-              <Button
-                variant="primary"
-                onClick={handleExportExcel}
-                disabled={filteredItems.length === 0}
-                className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 text-sm shadow-xs"
-              >
-                <FileSpreadsheet size={16} />
-                Export Excel
-              </Button>
-            </div>
           </div>
         </Card.Body>
       </Card>
@@ -292,7 +281,7 @@ const OutwardReportPage = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-max whitespace-nowrap text-left text-xs">
               <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-500">
                 <tr>
                   <th className="py-3 px-4">Dispatch Order</th>
@@ -313,10 +302,10 @@ const OutwardReportPage = () => {
                     onClick={() => setViewItem(item)}
                     className="hover:bg-blue-50/40 cursor-pointer transition-colors"
                   >
-                    <td className="py-3.5 px-4 font-mono font-bold text-gray-900">
+                    <td className="py-3.5 px-4 font-semibold tabular-nums text-gray-900">
                       {item.dispatch_number}
                     </td>
-                    <td className="py-3.5 px-4 text-gray-600 font-mono text-xs">
+                    <td className="py-3.5 px-4 tabular-nums text-gray-600">
                       {item.dispatch_date || '-'}
                     </td>
                     <td className="py-3.5 px-4 font-medium text-gray-800">
@@ -325,14 +314,13 @@ const OutwardReportPage = () => {
                     <td className="py-3.5 px-4 text-gray-700">
                       {item.transporter_name || 'Own Fleet'}
                     </td>
-                    <td className="py-3.5 px-4 font-mono text-xs font-semibold text-gray-900">
+                    <td className="py-3.5 px-4 font-semibold tabular-nums text-gray-900">
                       {item.vehicle_number || '-'}
                     </td>
                     <td className="py-3.5 px-4 text-gray-800">
                       <div className="font-medium">{item.product_name}</div>
-                      <div className="text-xs text-gray-400 font-mono">{item.product_code}</div>
                     </td>
-                    <td className="py-3.5 px-4 text-right font-mono font-bold text-blue-700">
+                    <td className="py-3.5 px-4 text-right font-bold tabular-nums text-blue-700">
                       {Number(item.dispatched_qty).toLocaleString()}
                       <span className="text-xs text-gray-400 font-normal ml-1">
                         {item.uom_code || 'PCS'}

@@ -847,7 +847,11 @@ class InventoryService:
             offset=offset,
             limit=limit,
         )
-        return [self._stock_quant_response(q) for q in quants], total
+        challans = await self.repo.get_quant_challan_numbers([quant.id for quant in quants])
+        return [
+            self._stock_quant_response(quant).model_copy(update={"challan_number": challans.get(quant.id)})
+            for quant in quants
+        ], total
 
     @staticmethod
     def _stock_quant_response(quant: StockQuant) -> StockQuantResponse:

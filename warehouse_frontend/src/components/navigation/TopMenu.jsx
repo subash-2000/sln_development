@@ -200,7 +200,7 @@ const TopMenu = () => {
   };
 
   return (
-    <nav className="flex items-center gap-1 w-full h-full px-4 overflow-visible">
+    <nav aria-label="Main navigation" className="flex min-h-11 flex-wrap items-center gap-1 whitespace-nowrap xl:flex-nowrap">
       {menuItems.map((item, index) => (
         <div 
           key={item.label}

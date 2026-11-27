@@ -192,16 +192,21 @@ const RingsSalesPage = () => {
                 <thead className="sticky top-0 z-10 bg-gray-100 shadow-2xs">
                   <tr>
                     <th className={`${thLeft} min-w-[150px]`}>TYPES</th>
-                    <th className={`${thLeft} min-w-[180px]`}>Supplier Challan / Invoice</th>
+                    <th className={`${thLeft} min-w-[180px]`}>Supplier Challan / Invoice Number</th>
                     <th className={`${thLeft} min-w-[110px]`}>Challan Date</th>
                     <th className={`${thLeft} min-w-[160px]`}>Transporter</th>
                     <th className={`${thLeft} min-w-[220px]`}>Buyer Name</th>
                     <th className={`${thLeft} min-w-[190px]`}>Supp To Customer Invoice</th>
                     <th className={`${thLeft} min-w-[110px]`}>Inv Date</th>
-                    <th className={`${thLeft} min-w-[160px]`}>Sales Tax Invoice</th>
-                    <th className={`${thLeft} min-w-[110px]`}>Tax Inv Date</th>
+                    <th className={`${thLeft} min-w-[160px]`}>Tax Invoice Number</th>
+                    <th className={`${thLeft} min-w-[110px]`}>Tax Invoice Date</th>
                     <th className={`${thRight} min-w-[130px]`}>Tax Inv Amount</th>
                     <th className={`${thCenter} min-w-[100px]`}>Tracking</th>
+                    <th className={thRight}>Invoice Packaging Weight (kg)</th>
+                    <th className={thRight}>Invoice Gross Weight (kg)</th>
+                    <th className={thLeft}>E-Way Bill Number</th>
+                    <th className={thLeft}>Remark</th>
+                    <th className={thLeft}>ACKN Copies Status</th>
                     <th className={`${thRight} min-w-[80px]`}>Pallets</th>
                     <th className={`${thRight} min-w-[110px]`}>QTY</th>
                     <th className={`${thRight} min-w-[90px]`}>Rate (₹)</th>
@@ -230,6 +235,11 @@ const RingsSalesPage = () => {
                       <td className={tdLeft}>{row.sales_tax_invoice_date || '—'}</td>
                       <td className={tdRight}>{row.sales_tax_invoice_amount ? formatCurrency(row.sales_tax_invoice_amount) : '—'}</td>
                       <td className={tdCenter}>{row.sales_tax_tracking_status}</td>
+                      <td className={tdRight}>{row.sales_tax_packing_weight == null ? '—' : formatWeight(row.sales_tax_packing_weight)}</td>
+                      <td className={tdRight}>{row.sales_tax_gross_weight == null ? '—' : formatWeight(row.sales_tax_gross_weight)}</td>
+                      <td className={tdLeft}>{row.sales_tax_eway_bill_number || '—'}</td>
+                      <td className={tdLeft}>{row.sales_tax_invoice_remarks || '—'}</td>
+                      <td className={tdLeft}>{row.sales_tax_ackn_copies_status || '—'}</td>
                       <td className={tdRight}>{row.pallet_count ?? 0}</td>
                       <td className={`${tdRight} font-semibold text-gray-900`}>{formatQty(row.quantity)}</td>
                       <td className={tdRight}>{formatRate(row.unit_rate)}</td>
@@ -258,7 +268,7 @@ const RingsSalesPage = () => {
                   ))}
                   {rows.length === 0 && (
                     <tr>
-                      <td colSpan={23} className="py-12 text-center text-sm text-gray-400 font-medium">
+                      <td colSpan={28} className="py-12 text-center text-sm text-gray-400 font-medium">
                         No posted dispatches found matching current filters.
                       </td>
                     </tr>
@@ -270,7 +280,7 @@ const RingsSalesPage = () => {
                       <td colSpan={7} className={`${tdLeft} font-bold text-gray-900 uppercase tracking-wider`}>
                         Total ({rows.length} {rows.length === 1 ? 'record' : 'records'})
                       </td>
-                      <td colSpan={4} className={tdCenter}>—</td>
+                      <td colSpan={9} className={tdCenter}>—</td>
                       <td className={tdRight}>{totals.pallets}</td>
                       <td className={`${tdRight} text-primary-900`}>{formatQty(totals.qty)}</td>
                       <td className={tdRight}>—</td>

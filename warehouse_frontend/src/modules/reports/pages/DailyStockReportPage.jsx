@@ -3,7 +3,7 @@ import {
   Boxes, 
   Search, 
   Download, 
-  FileSpreadsheet,
+  ChevronDown,
   RotateCcw, 
   Eye, 
   Warehouse, 
@@ -15,10 +15,11 @@ import {
 import PageHeader from '../../../components/common/PageHeader';
 import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
+import Dropdown from '../../../components/ui/Dropdown';
 import Loader from '../../../components/common/Loader';
 import { useDailyStockReports, useOutwardReports } from '../hooks/use-reports';
-import { exportReportToCsv } from '../api/reports.api';
-import { exportDailyStockReportToExcel } from '../utils/excel-export';
+import { exportReportToCsv, reportsApi } from '../api/reports.api';
+import { exportDailyStockDetailsToExcel, exportDailyStockReportToExcel } from '../utils/excel-export';
 import DailyStockReportViewModal from '../components/DailyStockReportViewModal';
 
 const DailyStockReportPage = () => {
@@ -28,6 +29,7 @@ const DailyStockReportPage = () => {
   const [stockFilter, setStockFilter] = useState('ALL'); // ALL, AVAILABLE_ONLY, LOW_STOCK
   const [period, setPeriod] = useState('DAILY'); // DAILY, WEEKLY, MONTHLY, YEARLY
   const [viewItem, setViewItem] = useState(null);
+  const [exportingDetails, setExportingDetails] = useState(false);
 
   const queryParams = useMemo(() => {
     const params = { page_size: 200 };
@@ -53,8 +55,8 @@ const DailyStockReportPage = () => {
     return Array.from(new Set(items.map((i) => i.category_name).filter(Boolean))).sort();
   }, [items]);
 
-  const filteredItems = useMemo(() => {
-    return items.filter((item) => {
+  const filterStockRows = useMemo(() => (rows) => {
+    return rows.filter((item) => {
       if (selectedWarehouse && item.warehouse_name !== selectedWarehouse) return false;
       if (selectedCategory && item.category_name !== selectedCategory) return false;
       if (stockFilter === 'AVAILABLE_ONLY' && Number(item.quantity_available || 0) <= 0) return false;
@@ -69,7 +71,29 @@ const DailyStockReportPage = () => {
       }
       return true;
     });
-  }, [items, selectedWarehouse, selectedCategory, stockFilter, searchTerm]);
+  }, [selectedWarehouse, selectedCategory, stockFilter, searchTerm]);
+  const filteredItems = filterStockRows(items);
+
+  const handleExportDetails = async () => {
+    if (exportingDetails) return;
+    setExportingDetails(true);
+    try {
+      const rows = [];
+      let page = 1;
+      let totalPages;
+      do {
+        const result = await reportsApi.getDailyStockReports({ ...queryParams, page });
+        rows.push(...result.items);
+        totalPages = result.pagination.total_pages;
+        page += 1;
+      } while (page <= totalPages);
+      await exportDailyStockDetailsToExcel(filterStockRows(rows));
+    } catch (error) {
+      window.alert(error.message || 'Could not download the stock details.');
+    } finally {
+      setExportingDetails(false);
+    }
+  };
 
   // Aggregate KPIs
   const totalSkus = filteredItems.length;
@@ -140,26 +164,17 @@ const DailyStockReportPage = () => {
           { label: 'Daily Stock Reports' },
         ]}
         actions={
-          <div className="flex items-center gap-2">
-            <Button
-              variant="primary"
-              onClick={handleExportExcel}
-              disabled={filteredItems.length === 0}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-medium"
-            >
-              <FileSpreadsheet size={16} />
-              Export Excel (Summary Sheet)
+          <Dropdown trigger={
+            <Button aria-haspopup="menu" isDisabled={isLoading} isLoading={exportingDetails}
+              leftIcon={<Download size={16} />} rightIcon={<ChevronDown size={14} />}
+              className="bg-emerald-600 hover:bg-emerald-700">
+              Export
             </Button>
-            <Button
-              variant="secondary"
-              onClick={handleExportCsv}
-              disabled={filteredItems.length === 0}
-              className="flex items-center gap-2"
-            >
-              <Download size={16} />
-              Export CSV
-            </Button>
-          </div>
+          }>
+            <Dropdown.Item onClick={() => filteredItems.length && handleExportExcel()}>Excel (Summary Sheet)</Dropdown.Item>
+            <Dropdown.Item onClick={handleExportDetails}>Excel (Stock Details)</Dropdown.Item>
+            <Dropdown.Item onClick={() => filteredItems.length && handleExportCsv()}>CSV</Dropdown.Item>
+          </Dropdown>
         }
       />
 
@@ -246,7 +261,7 @@ const DailyStockReportPage = () => {
       {/* Filters Toolbar */}
       <Card>
         <Card.Body className="p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
               <input
@@ -309,15 +324,6 @@ const DailyStockReportPage = () => {
               >
                 <RotateCcw size={16} />
               </Button>
-              <Button
-                variant="primary"
-                onClick={handleExportExcel}
-                disabled={filteredItems.length === 0}
-                className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 text-sm shadow-xs"
-              >
-                <FileSpreadsheet size={16} />
-                Export Excel
-              </Button>
             </div>
           </div>
         </Card.Body>
@@ -339,7 +345,7 @@ const DailyStockReportPage = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-max whitespace-nowrap text-left text-xs">
               <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-500">
                 <tr>
                   <th className="py-3 px-4">Product SKU</th>
@@ -374,8 +380,8 @@ const DailyStockReportPage = () => {
                       </span>
                     </td>
                     <td className="py-3.5 px-4">
-                      <div className="text-gray-900 text-xs font-medium">{item.warehouse_name}</div>
-                      <div className="text-xs text-gray-400 font-mono">{item.location_code}</div>
+                      <span className="font-medium text-gray-900">{item.warehouse_name}</span>
+                      {item.location_code && <span className="ml-2 text-gray-500">{item.location_code}</span>}
                     </td>
                     <td className="py-3.5 px-4 font-mono text-xs text-gray-600">
                       {item.batch_number || '-'}
@@ -429,7 +435,7 @@ const DailyStockReportPage = () => {
           <div className="p-8 text-center text-sm text-gray-500">No outward dispatches posted today.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-max whitespace-nowrap text-left text-xs">
               <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase text-gray-500">
                 <tr>
                   <th className="py-3 px-4">Outward No.</th><th className="py-3 px-4">Dispatch Date</th>

@@ -10,17 +10,21 @@ const Navbar = () => {
   
   return (
     <div className="flex flex-col bg-white border-b border-gray-200 sticky top-0 z-20">
-      <header className="h-14 flex items-center justify-between px-6 border-b border-gray-50">
+      <header className="flex min-h-14 flex-wrap items-center gap-x-4 px-3 sm:px-6 xl:flex-nowrap">
         {/* Left side: Logo & Brand */}
-        <div className="flex items-center space-x-8">
+        <div className="flex shrink-0 items-center whitespace-nowrap">
           <div className="flex items-center space-x-2">
             <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold">W</div>
             <span className="font-bold text-lg text-gray-900 tracking-tight">SLN WMS</span>
           </div>
         </div>
 
+        <div className="order-last min-w-0 basis-full xl:order-none xl:flex-1 xl:basis-auto">
+          <TopMenu />
+        </div>
+
         {/* Right side: User & Notifications */}
-        <div className="flex items-center space-x-2">
+        <div className="ml-auto flex shrink-0 items-center space-x-2">
           <button className="p-2 text-gray-400 hover:bg-gray-50 rounded-lg relative">
             <Bell size={18} />
             <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
@@ -33,7 +37,7 @@ const Navbar = () => {
               <div className="h-8 w-8 bg-primary-100 text-primary-700 rounded-lg flex items-center justify-center font-bold text-xs">
                 {(user?.full_name || user?.username || 'U').charAt(0).toUpperCase()}
               </div>
-              <div className="text-left hidden sm:block mr-2">
+              <div className="mr-2 hidden text-left sm:block xl:hidden 2xl:block">
                 <p className="text-xs font-bold text-gray-900 leading-tight">{user?.full_name || user?.username || 'User'}</p>
                 <p className="text-[10px] text-gray-500 uppercase tracking-tight font-medium">
                   {user?.is_superuser ? 'Super Admin' : (user?.roles?.[0] || 'Member')}
@@ -58,9 +62,6 @@ const Navbar = () => {
         </div>
       </header>
 
-      <div className="relative z-20 min-h-11 px-2 flex items-center overflow-visible border-b border-gray-50">
-        <TopMenu />
-      </div>
     </div>
   );
 };

@@ -86,6 +86,7 @@ class CurrentStockRow(BaseModel):
     vendor_name: str | None
 
     batch_number: str | None
+    challan_number: str | None = None
 
     quantity_on_hand: Decimal
 
@@ -94,6 +95,7 @@ class CurrentStockRow(BaseModel):
     quantity_available: Decimal
 
     received_qty: Decimal = Decimal("0")
+    ring_weight: Decimal | None = None
 
     dispatched_qty: Decimal = Decimal("0")
 
@@ -260,6 +262,8 @@ class OutwardSummaryRow(BaseModel):
     eway_bill_number: str | None = None
 
     sln_challan_number: str | None = None
+    challan_date: date | None = None
+    ring_weight: Decimal | None = None
     supplier_invoice_number: str | None = None
     po_number: str | None = None
     rate: Decimal = Decimal("0")
@@ -284,6 +288,9 @@ class VehicleMovementRow(BaseModel):
     driver_phone: str | None = None
     movement_type: str = "OUTWARD"
     reference_number: str | None = None
+    challan_number: str | None = None
+    basic_value: Decimal | None = None
+    packing_weight: Decimal | None = None
     destination: str | None = None
     party_name: str | None = None
     vendor_name: str | None = None

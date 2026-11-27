@@ -30,7 +30,7 @@ const MainLayout = () => {
       <Navbar />
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 flex flex-col">
+      <main className="flex flex-1 flex-col overflow-y-auto px-4 pb-4 pt-3 md:px-6 md:pb-6 lg:px-8 lg:pb-8">
         <div className="max-w-[1600px] w-full mx-auto flex-1 flex flex-col">
           <Outlet />
         </div>

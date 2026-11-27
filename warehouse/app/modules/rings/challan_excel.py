@@ -85,7 +85,7 @@ def _fit(cell, value, *, as_text: bool = False) -> None:
     cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=False, shrink_to_fit=True)
 
 
-def _fill(ws: Worksheet, document: RingsDocument, company: Company | None) -> None:
+def _fill(ws: Worksheet, document: RingsDocument, company: Company | None, references=None) -> None:
     ws.sheet_view.showGridLines = True
     ws.sheet_view.zoomScale = 70
     ws.page_setup.orientation = "portrait"
@@ -191,14 +191,16 @@ def _fill(ws: Worksheet, document: RingsDocument, company: Company | None) -> No
         rate = line.unit_rate or Decimal("0")
         amount = line.basic_value if line.basic_value is not None else (qty * rate)
         total_amt += Decimal(str(amount))
-        challan_no = document.supplier_document_number or ""
+        challan_no, challan_date = (references or {}).get(
+            line.id, (document.supplier_document_number or "", document.supplier_document_date)
+        )
         ws.cell(row, 2, index + 1)
         ws.cell(row, 2).alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
         ws.cell(row, 3, (line.product.sku if line.product else "") or None)
         ws.cell(row, 3).alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
         _fit(ws.cell(row, 5), hsn, as_text=True)
-        ws.cell(row, 6, int(challan_no) if str(challan_no).isdigit() else (challan_no or None))
-        ws.cell(row, 7, _excel_date(document.supplier_document_date))
+        _fit(ws.cell(row, 6), challan_no or None, as_text=True)
+        ws.cell(row, 7, _excel_date(challan_date))
         ws.cell(row, 7).number_format = "DD-MM-YYYY"
         po = sanitize_po(document.po_number)
         ws.cell(row, 8, po or None)
@@ -234,14 +236,14 @@ def _fill(ws: Worksheet, document: RingsDocument, company: Company | None) -> No
     ws.cell(tax_row, 12, 0)
 
 
-def _workbook(documents: list[RingsDocument], company: Company | None):
+def _workbook(documents: list[RingsDocument], company: Company | None, references=None):
     wb = load_workbook(TEMPLATE)
     pristine = wb.active
     pristine.title = "_template"
     used: set[str] = set()
     for document in documents:
         ws = wb.copy_worksheet(pristine)
-        _fill(ws, document, company)
+        _fill(ws, document, company, references)
         ws.title = _sheet_title(document, used)
     del wb["_template"]
     if wb.worksheets:
@@ -249,13 +251,13 @@ def _workbook(documents: list[RingsDocument], company: Company | None):
     return wb
 
 
-def generate_sln_challan_xlsx(document: RingsDocument, company: Company | None) -> bytes:
+def generate_sln_challan_xlsx(document: RingsDocument, company: Company | None, references=None) -> bytes:
     buffer = BytesIO()
-    _workbook([document], company).save(buffer)
+    _workbook([document], company, references).save(buffer)
     return buffer.getvalue()
 
 
-def generate_sln_challan_register_xlsx(documents: list[RingsDocument], company: Company | None) -> bytes:
+def generate_sln_challan_register_xlsx(documents: list[RingsDocument], company: Company | None, references=None) -> bytes:
     buffer = BytesIO()
-    _workbook(documents, company).save(buffer)
+    _workbook(documents, company, references).save(buffer)
     return buffer.getvalue()

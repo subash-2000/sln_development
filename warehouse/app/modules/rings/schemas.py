@@ -297,3 +297,7 @@ class RingsSalesRow(BaseModel):
     sales_tax_invoice_amount: Decimal | None = None
     sales_tax_tracking_status: str = "PENDING"
     sales_tax_invoice_remarks: str | None = None
+    sales_tax_packing_weight: Decimal | None = None
+    sales_tax_gross_weight: Decimal | None = None
+    sales_tax_eway_bill_number: str | None = None
+    sales_tax_ackn_copies_status: str | None = None

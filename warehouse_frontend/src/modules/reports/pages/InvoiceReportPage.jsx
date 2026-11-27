@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { 
   FileSpreadsheet, 
+  ChevronDown,
   Search, 
   Download, 
   RotateCcw, 
@@ -14,6 +15,7 @@ import {
 import PageHeader from '../../../components/common/PageHeader';
 import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
+import Dropdown from '../../../components/ui/Dropdown';
 import StatusBadge from '../../../components/ui/StatusBadge';
 import Loader from '../../../components/common/Loader';
 import { useInvoiceReports } from '../hooks/use-reports';
@@ -122,26 +124,22 @@ const InvoiceReportPage = () => {
           { label: 'Invoice Reports' },
         ]}
         actions={
-          <div className="flex items-center gap-2">
+          <Dropdown trigger={
             <Button
-              variant="primary"
-              onClick={handleExportExcel}
-              disabled={filteredItems.length === 0}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-medium"
+              aria-haspopup="menu"
+              isDisabled={filteredItems.length === 0}
+              leftIcon={<Download size={16} />}
+              rightIcon={<ChevronDown size={14} />}
+              className="bg-emerald-600 hover:bg-emerald-700"
             >
-              <FileSpreadsheet size={16} />
-              Export Excel (Sales Statement)
+              Export
             </Button>
-            <Button
-              variant="secondary"
-              onClick={handleExportCsv}
-              disabled={filteredItems.length === 0}
-              className="flex items-center gap-2"
-            >
-              <Download size={16} />
-              Export CSV
-            </Button>
-          </div>
+          }>
+            <Dropdown.Item onClick={() => filteredItems.length && handleExportExcel()}>
+              Excel (Sales Statement)
+            </Dropdown.Item>
+            <Dropdown.Item onClick={() => filteredItems.length && handleExportCsv()}>CSV</Dropdown.Item>
+          </Dropdown>
         }
       />
 
@@ -205,7 +203,7 @@ const InvoiceReportPage = () => {
       {/* Filters Toolbar */}
       <Card>
         <Card.Body className="p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-center">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-center">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
               <input
@@ -259,17 +257,6 @@ const InvoiceReportPage = () => {
               </button>
             </div>
 
-            <div>
-              <Button
-                variant="primary"
-                onClick={handleExportExcel}
-                disabled={filteredItems.length === 0}
-                className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 text-sm shadow-xs"
-              >
-                <FileSpreadsheet size={16} />
-                Export Excel
-              </Button>
-            </div>
           </div>
         </Card.Body>
       </Card>

@@ -311,6 +311,7 @@ async def export_report_excel_post(
 ):
     from app.modules.reports.template_excel_exporter import (
         export_exact_inward_receipt,
+        export_vehicle_movements,
         export_exact_type_wise_stock,
         export_exact_stock_summary,
         export_exact_sales_statement
@@ -365,6 +366,7 @@ async def export_report_excel_post(
             items = [
                 {
                     "product_code": q.product.sku if q.product else "-",
+                    "ring_weight": (q.product.net_weight or None) if q.product else None,
                     "product_name": q.product.name if q.product else "-",
                     "quantity_on_hand": float(q.quantity_on_hand or 0),
                     "quantity_reserved": float(q.quantity_reserved or 0),
@@ -425,23 +427,7 @@ async def export_report_excel_post(
                 search=payload.search,
             )
             items = await service.repo.get_vehicle_movement_report(company_id, filters, skip=0, limit=2000)
-        if payload.movement_type and payload.movement_type.upper() == "OUTWARD":
-            content, filename = export_exact_sales_statement(
-                items,
-                customer_name=payload.customer_name,
-                vendor_name=payload.vendor_name,
-                date_from=payload.date_from,
-                date_to=payload.date_to,
-                sheet_name="Vehicle Outward Movements"
-            )
-        else:
-            content, filename = export_exact_inward_receipt(
-                items,
-                vendor_name=payload.vendor_name,
-                date_from=payload.date_from,
-                date_to=payload.date_to,
-                sheet_name="Vehicle Inward Movements"
-            )
+        content, filename = export_vehicle_movements(items, payload.movement_type)
 
     else:
         if not items:
@@ -478,6 +464,7 @@ async def export_report_excel(
 ):
     from app.modules.reports.template_excel_exporter import (
         export_exact_inward_receipt,
+        export_vehicle_movements,
         export_exact_type_wise_stock,
         export_exact_stock_summary,
         export_exact_sales_statement
@@ -517,6 +504,7 @@ async def export_report_excel(
         rows = [
             {
                 "product_code": q.product.sku if q.product else "-",
+                "ring_weight": (q.product.net_weight or None) if q.product else None,
                 "product_name": q.product.name if q.product else "-",
                 "quantity_on_hand": float(q.quantity_on_hand or 0),
                 "quantity_reserved": float(q.quantity_reserved or 0),
@@ -575,22 +563,7 @@ async def export_report_excel(
             search=search,
         )
         rows = await service.repo.get_vehicle_movement_report(company_id, filters, skip=0, limit=2000)
-        if movement_type and movement_type.upper() == "OUTWARD":
-            content, filename = export_exact_sales_statement(
-                rows,
-                customer_name=customer_name,
-                date_from=str(date_from) if date_from else None,
-                date_to=str(date_to) if date_to else None,
-                sheet_name="Vehicle Outward Movements"
-            )
-        else:
-            content, filename = export_exact_inward_receipt(
-                rows,
-                vendor_name=vendor_name,
-                date_from=str(date_from) if date_from else None,
-                date_to=str(date_to) if date_to else None,
-                sheet_name="Vehicle Inward Movements"
-            )
+        content, filename = export_vehicle_movements(rows, movement_type)
 
     else:
         # Fallback to inward receipt

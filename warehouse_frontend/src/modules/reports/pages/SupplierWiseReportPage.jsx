@@ -3,7 +3,7 @@ import {
   Building2, 
   Search, 
   Download, 
-  FileSpreadsheet,
+  ChevronDown,
   RotateCcw, 
   Eye, 
   Boxes, 
@@ -14,6 +14,7 @@ import {
 import PageHeader from '../../../components/common/PageHeader';
 import Card from '../../../components/ui/Card';
 import Button from '../../../components/ui/Button';
+import Dropdown from '../../../components/ui/Dropdown';
 import Loader from '../../../components/common/Loader';
 import { useSupplierStockReports } from '../hooks/use-reports';
 import { useVendors } from '../../vendors/hooks/use-vendors';
@@ -130,26 +131,16 @@ const SupplierWiseReportPage = () => {
           { label: 'Supplier Wise Reports' },
         ]}
         actions={
-          <div className="flex items-center gap-2">
-            <Button
-              variant="primary"
-              onClick={handleExportExcel}
-              disabled={filteredItems.length === 0}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs font-medium"
-            >
-              <FileSpreadsheet size={16} />
-              Export Excel (Type Wise Stock)
+          <Dropdown trigger={
+            <Button aria-haspopup="menu" isDisabled={filteredItems.length === 0}
+              leftIcon={<Download size={16} />} rightIcon={<ChevronDown size={14} />}
+              className="bg-emerald-600 hover:bg-emerald-700">
+              Export
             </Button>
-            <Button
-              variant="secondary"
-              onClick={handleExportCsv}
-              disabled={filteredItems.length === 0}
-              className="flex items-center gap-2"
-            >
-              <Download size={16} />
-              Export CSV
-            </Button>
-          </div>
+          }>
+            <Dropdown.Item onClick={() => filteredItems.length && handleExportExcel()}>Excel (Type Wise Stock)</Dropdown.Item>
+            <Dropdown.Item onClick={() => filteredItems.length && handleExportCsv()}>CSV</Dropdown.Item>
+          </Dropdown>
         }
       />
 
@@ -207,7 +198,7 @@ const SupplierWiseReportPage = () => {
       {/* Filter Toolbar */}
       <Card>
         <Card.Body className="p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
             {/* Search */}
             <div className="relative">
               <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
@@ -249,7 +240,7 @@ const SupplierWiseReportPage = () => {
               </select>
             </div>
 
-            {/* Reset & Export */}
+            {/* Reset filters */}
             <div className="flex items-center gap-2">
               <Button
                 variant="secondary"
@@ -258,15 +249,6 @@ const SupplierWiseReportPage = () => {
                 title="Reset Filters"
               >
                 <RotateCcw size={16} />
-              </Button>
-              <Button
-                variant="primary"
-                onClick={handleExportExcel}
-                disabled={filteredItems.length === 0}
-                className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 text-sm shadow-xs"
-              >
-                <FileSpreadsheet size={16} />
-                Export Excel
               </Button>
             </div>
           </div>

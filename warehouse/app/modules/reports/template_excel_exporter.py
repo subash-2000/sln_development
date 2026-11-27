@@ -18,6 +18,43 @@ import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side
 
 
+def export_vehicle_movements(items: List[Any], movement_type: str = "ALL") -> tuple[bytes, str]:
+    columns = [
+        ("Movement Type", "movement_type", 18), ("Types", "material_summary", 42),
+        ("Challan Number", "challan_number", 24), ("Movement Reference", "reference_number", 24),
+        ("Movement Date", "movement_date", 18), ("LR Number", "lr_number", 20),
+        ("Transporter", "transporter_name", 26), ("Vehicle Number", "vehicle_number", 20),
+        ("Supplier / Customer", "party_name", 34), ("Quantity", "dispatched_qty", 16),
+        ("UOM", "uom_code", 10), ("Basic Value", "basic_value", 18),
+        ("Packing Weight (kg)", "packing_weight", 22), ("Status", "status", 16),
+    ]
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Vehicle Movements"
+    sheet.append([label for label, _, _ in columns])
+    for cell, (_, _, width) in zip(sheet[1], columns):
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = openpyxl.styles.PatternFill("solid", fgColor="1E3A5F")
+        sheet.column_dimensions[cell.column_letter].width = width
+    for item in items:
+        values = [_get_val(item, key) for _, key, _ in columns]
+        for index in (9, 11, 12):
+            values[index] = None if values[index] in (None, "") else _safe_float(values[index])
+        values[4] = _safe_date(values[4], use_today=False)
+        sheet.append(values)
+        for cell in sheet[sheet.max_row]:
+            if isinstance(cell.value, str):
+                cell.data_type = "s"
+        sheet.cell(sheet.max_row, 5).number_format = "dd-mmm-yyyy"
+        sheet.cell(sheet.max_row, 12).number_format = "#,##0.00"
+        sheet.cell(sheet.max_row, 13).number_format = "#,##0.000"
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    output = io.BytesIO()
+    workbook.save(output)
+    return output.getvalue(), f"Vehicle_Movement_Report_{(movement_type or 'ALL').upper()}.xlsx"
+
+
 def _get_template_path() -> Path:
     candidates = [
         Path(r"C:\logic\Development\sample\Currently Inventory Matster Suppler 1.xlsx"),
@@ -425,7 +462,7 @@ def export_exact_stock_summary(
         received = _safe_float(_get_val(item, "received_qty"), on_hand)
         dispatched = _safe_float(_get_val(item, "dispatched_qty"), 0.0)
         opening = on_hand + dispatched - received
-        ring_wt = 0.034
+        ring_wt = _safe_float(_get_val(item, "ring_weight"))
 
         ws.cell(row=curr_row, column=2, value=sku)                                      # B: TYPES
         ws.cell(row=curr_row, column=3, value=0)                                        # C: Monthly Call off
@@ -435,10 +472,12 @@ def export_exact_stock_summary(
         ws.cell(row=curr_row, column=7, value=dispatched)                               # G: Qty Lifted
         ws.cell(row=curr_row, column=8, value=available)                                # H: Balance Qty
         ws.cell(row=curr_row, column=9, value=f"=G{curr_row}-C{curr_row}")              # I: Call off diff
-        ws.cell(row=curr_row, column=10, value=ring_wt)                                 # J: RING Weight
-        ws.cell(row=curr_row, column=11, value=f"=+H{curr_row}*J{curr_row}")            # K: Balance Weight
+        if ring_wt > 0:
+            ws.cell(row=curr_row, column=10, value=ring_wt)
+            ws.cell(row=curr_row, column=11, value=f"=H{curr_row}*J{curr_row}")
         ws.cell(row=curr_row, column=12, value=on_hand * 10.03)                         # L: Basic Value
-        ws.cell(row=curr_row, column=13, value=f"=E{curr_row}*J{curr_row}")              # M: Rec Weight
+        if ring_wt > 0:
+            ws.cell(row=curr_row, column=13, value=f"=E{curr_row}*J{curr_row}")
 
         for col_idx in range(2, 14):
             cell = ws.cell(row=curr_row, column=col_idx)
@@ -468,8 +507,9 @@ def export_exact_stock_summary(
         for target, source in zip("IJKL", "JKLM"):
             ws.column_dimensions[target].width = ws.column_dimensions[source].width
         for row in range(6, curr_row):
-            ws[f"J{row}"] = f"=H{row}*I{row}"
-            ws[f"L{row}"] = f"=E{row}*I{row}"
+            if ws[f"I{row}"].value is not None:
+                ws[f"J{row}"] = f"=H{row}*I{row}"
+                ws[f"L{row}"] = f"=E{row}*I{row}"
 
     out = io.BytesIO()
     wb.save(out)
@@ -499,6 +539,10 @@ def export_exact_sales_statement(
     ws = wb["Sales Statement"]
     if sheet_name and sheet_name != "Sales Statement":
         ws.title = sheet_name
+    is_outward = sheet_name == "Outward Dispatches"
+    if is_outward:
+        ws["C7"] = "CHALLAN NUMBER"
+        ws["D7"] = "CHALLAN DATE"
 
     today_str = datetime.now().strftime("%d-%m-%Y")
     if customer_name:
@@ -534,8 +578,11 @@ def export_exact_sales_statement(
         po_no = str(_get_val(item, "po_number") or "P247245")
 
         ws.cell(row=curr_row, column=2, value=sku)                                      # B: TYPES
-        ws.cell(row=curr_row, column=3, value=_get_val(item, "dispatch_number") or 556) # C: FACTORY DC NO
-        ws.cell(row=curr_row, column=4, value=inv_date)                                 # D: DC DATE
+        challan_number = _get_val(item, "sln_challan_number", "challan_number") if is_outward else (_get_val(item, "dispatch_number") or 556)
+        challan_date = _safe_date(_get_val(item, "challan_date"), use_today=False) if is_outward else inv_date
+        ring_weight = _get_val(item, "ring_weight") if is_outward else 0.024
+        ws.cell(row=curr_row, column=3, value=challan_number)
+        ws.cell(row=curr_row, column=4, value=challan_date)
         ws.cell(row=curr_row, column=5, value="SP ROADLINES")                           # E: Received Mode
         ws.cell(row=curr_row, column=6, value=cust)                                     # F: Customer
         ws.cell(row=curr_row, column=7, value=inv_no)                                   # G: W/H INV No
@@ -549,10 +596,12 @@ def export_exact_sales_statement(
         ws.cell(row=curr_row, column=15, value=f"=+N{curr_row}+M{curr_row}")            # O: Inv Value
         ws.cell(row=curr_row, column=16, value=inv_date)                                # P: Dispatch Date
         ws.cell(row=curr_row, column=17, value=po_no)                                   # Q: PO NO
-        ws.cell(row=curr_row, column=18, value=0.024)                                   # R: RING WT
+        if ring_weight is not None:
+            ws.cell(row=curr_row, column=18, value=_safe_float(ring_weight))
         ws.cell(row=curr_row, column=19, value=0)                                       # S: GSP 1 Wt
         ws.cell(row=curr_row, column=20, value=24)                                      # T: GSP 2 Wt
-        ws.cell(row=curr_row, column=21, value=f"=+K{curr_row}*R{curr_row}+I{curr_row}*S{curr_row}+J{curr_row}*T{curr_row}")
+        if ring_weight is not None:
+            ws.cell(row=curr_row, column=21, value=f"=+K{curr_row}*R{curr_row}+I{curr_row}*S{curr_row}+J{curr_row}*T{curr_row}")
 
         for col_idx in range(2, 22):
             cell = ws.cell(row=curr_row, column=col_idx)
